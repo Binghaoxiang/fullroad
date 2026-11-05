@@ -1,0 +1,145 @@
+OLE 流清单：
+  Root Entry/Arcs6/Data    size=7239
+  Root Entry/Arcs6/Header  size=4
+  Root Entry/Nets6/Data    size=25977
+  Root Entry/Nets6/Header  size=4
+  Root Entry/Pads6/Data    size=21960
+  Root Entry/Pads6/Header  size=4
+  Root Entry/Texts/Data    size=886
+  Root Entry/Texts/Header  size=4
+  Root Entry/Vias6/Data    size=11440
+  Root Entry/Vias6/Header  size=4
+  Root Entry/Board6/Data   size=27160
+  Root Entry/Board6/Header size=4
+  Root Entry/Fills6/Data   size=0
+  Root Entry/Fills6/Header size=4
+  Root Entry/Models/0      size=93777
+  Root Entry/Models/Data   size=153
+  Root Entry/Models/Header size=4
+  Root Entry/Rules6/Data   size=11898
+  Root Entry/Rules6/Header size=4
+  Root Entry/Texts6/Data   size=15586
+  Root Entry/Texts6/Header size=4
+  Root Entry/Tracks6/Data  size=30360
+  Root Entry/Tracks6/Header size=4
+  Root Entry/Classes6/Data size=3207
+  Root Entry/Classes6/Header size=4
+  Root Entry/FromTos6/Data size=0
+  Root Entry/FromTos6/Header size=4
+  Root Entry/Regions6/Data size=17129
+  Root Entry/Regions6/Header size=4
+  Root Entry/Textures/Data size=0
+  Root Entry/Textures/Header size=4
+  Root Entry/Polygons6/Data size=1169
+  Root Entry/Polygons6/Header size=4
+  Root Entry/Embeddeds6/Data size=0
+  Root Entry/Embeddeds6/Header size=4
+  Root Entry/FileHeader    size=24
+  Root Entry/Components6/Data size=14018
+  Root Entry/Components6/Header size=4
+  Root Entry/Dimensions6/Data size=0
+  Root Entry/Dimensions6/Header size=4
+  Root Entry/Violations6/Data size=276
+  Root Entry/Violations6/Header size=4
+  Root Entry/Connections6/Data size=0
+  Root Entry/Connections6/Header size=4
+  Root Entry/Coordinates6/Data size=0
+  Root Entry/Coordinates6/Header size=4
+  Root Entry/WideStrings6/Data size=1142
+  Root Entry/WideStrings6/Header size=4
+  Root Entry/FileHeaderSix size=24
+  Root Entry/ModelsNoEmbed/Data size=0
+  Root Entry/ModelsNoEmbed/Header size=4
+  Root Entry/EmbeddedFonts6/Data size=426150
+  Root Entry/EmbeddedFonts6/Header size=4
+  Root Entry/EmbeddedBoards6/Data size=0
+  Root Entry/EmbeddedBoards6/Header size=4
+  Root Entry/FileVersionInfo/Data size=9837
+  Root Entry/FileVersionInfo/Header size=4
+  Root Entry/ComponentBodies6/Data size=19316
+  Root Entry/ComponentBodies6/Header size=4
+  Root Entry/Pin Swap Options6/Data size=294
+  Root Entry/Pin Swap Options6/Header size=4
+  Root Entry/DifferentialPairs6/Data size=0
+  Root Entry/DifferentialPairs6/Header size=4
+  Root Entry/ShapeBasedRegions6/Data size=19623
+  Root Entry/ShapeBasedRegions6/Header size=4
+  Root Entry/Advanced Placer Options6/Data size=207
+  Root Entry/Advanced Placer Options6/Header size=4
+  Root Entry/ShapeBasedComponentBodies6/Data size=22583
+  Root Entry/ShapeBasedComponentBodies6/Header size=4
+  Root Entry/Design Rule Checker Options6/Data size=729
+  Root Entry/Design Rule Checker Options6/Header size=4
+
+=== 网络名 ===
+  3.3V
+  CH0
+  CH1
+  CH2
+  CH3
+  CH4
+  CH5
+  CH6
+  CH7
+  CH8
+  CH9
+  CHA
+  CHB
+  CHC
+  CHD
+  CHE
+  CHF
+  EN1
+  EN2
+  EN3
+  EN4
+  GND
+  NCS
+  NetC105_2
+  NetC106_1
+  NetC106_2
+  NetP4_2
+  NetP4_3
+  NetP4_5
+  NetP4_6
+  NetP4_7
+  NetP4_8
+  NetP4_9
+  REF
+  SCLK
+  SDI
+  SDO
+
+=== 元件（位号 / 型号 / 封装）===
+  C102                                                         
+  C103                                                         
+  C104                                                         
+  C105                                                         
+  C106                                                         
+  L1                                                           
+  P3                            ADC                            
+  P4                            ADC                            
+  R0                            ADC                            
+  R1                            ADC                            
+  R17                                                          
+  R18                                                          
+  R19                                                          
+  R2                            ADC                            
+  R3                            ADC                            
+  R4                            ADC                            
+  R5                            ADC                            
+  R6                            ADC                            
+  R7                            ADC                            
+  R8                            ADC                            
+  R9                            ADC                            
+  Ra                            ADC                            
+  Rb                            ADC                            
+  Rc                            ADC                            
+  Rd                            ADC                            
+  Re                            ADC                            
+  Rf                            ADC                            
+  U1                                                           
+  U2                            ADC                            
+  （共 29 个）
+
+=== 网络引脚数（Pads6）===

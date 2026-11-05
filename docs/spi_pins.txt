@@ -1,0 +1,54 @@
+=== MCU(U1) 上的 SPI 引脚 ===
+  pin 1    PE2                  -> SPI4_SCK
+  pin 4    PE5                  -> SPI4_MISO
+  pin 5    PE6                  -> SPI4_MOSI
+  pin 51   PA5                  -> SPI1_SCK
+  pin 52   PA6                  -> SPI1_MISO
+  pin 53   PA7                  -> SPI1_MOSI
+  pin 139  PC10                 -> SPI5_SCK
+  pin 140  PC11                 -> SPI5_MISO
+  pin 141  PC12                 -> SPI5_MOSI
+  pin 1    PE2                  -> SPI4_SCK
+  pin 4    PE5                  -> SPI4_MISO
+  pin 5    PE6                  -> SPI4_MOSI
+  pin 51   PA5                  -> SPI1_SCK
+  pin 52   PA6                  -> SPI1_MISO
+  pin 53   PA7                  -> SPI1_MOSI
+  pin 139  PC10                 -> SPI5_SCK
+  pin 140  PC11                 -> SPI5_MISO
+  pin 141  PC12                 -> SPI5_MOSI
+
+=== 每个 SPI 片选网络出现在哪些器件引脚 ===
+  SPI1_CS0      : FPC1.3
+  SPI1_CS1      : FPC2.3
+  SPI1_CS2      : FPC3.3
+  SPI4_CS0      : FPC16.3
+  SPI4_CS1      : FPC15.3
+  SPI4_CS2      : FPC14.3
+  SPI4_CS3      : FPC13.3
+  SPI4_CS4      : FPC12.3
+  SPI5_CS0      : FPC11.3
+  SPI5_CS1      : FPC10.3
+  SPI5_CS2      : FPC9.3
+  SPI5_CS3      : FPC8.3
+  SPI5_CS4      : FPC7.3
+  SPI6_CS0      : FPC6.3
+  SPI6_CS1      : FPC5.3
+  SPI6_CS2      : FPC4.3
+
+=== 每个 SPI 数据/时钟网络出现的器件 ===
+  SPI1_MISO     : U1.52, H8.2, U1.52, FPC1.4, FPC2.4, FPC3.4
+  SPI1_MOSI     : U1.53, U1.53
+  SPI1_SCK      : U1.51, H8.1, U1.51, FPC1.2, FPC2.2, FPC3.2
+  SPI2_MISO     : H1.2
+  SPI2_SCK      : H1.1
+  SPI3_MISO     : H2.2
+  SPI3_SCK      : H2.1
+  SPI4_MISO     : U1.4, H11.2, U1.4, FPC12.4, FPC13.4, FPC14.4, FPC15.4, FPC16.4
+  SPI4_MOSI     : U1.5, U1.5
+  SPI4_SCK      : U1.1, H11.1, U1.1, FPC12.2, FPC13.2, FPC14.2, FPC15.2, FPC16.2
+  SPI5_MISO     : U1.140, H9.2, U1.140, FPC10.4, FPC11.4, FPC7.4, FPC8.4, FPC9.4
+  SPI5_MOSI     : U1.141, U1.141
+  SPI5_SCK      : U1.139, H9.1, U1.139, FPC10.2, FPC11.2, FPC7.2, FPC8.2, FPC9.2
+  SPI6_MISO     : H10.2, FPC4.4, FPC5.4, FPC6.4
+  SPI6_SCK      : H10.1, FPC4.2, FPC5.2, FPC6.2

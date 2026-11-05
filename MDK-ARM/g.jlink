@@ -1,0 +1,8 @@
+si SWD
+speed 1000
+device CORTEX-M4
+connect
+h
+mem32 E000ED00 1
+regs
+q

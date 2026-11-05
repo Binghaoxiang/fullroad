@@ -1,0 +1,41 @@
+# ============ Keil MDK 编译产物（不入库） ============
+MDK-ARM/Objects/
+MDK-ARM/Listings/
+MDK-ARM/DebugConfig/
+*.uvguix.*
+*.uvguix
+*.axf
+*.o
+*.d
+*.crf
+*.dep
+*.lnp
+*.map
+*.lst
+*.htm
+*.iex
+*.sct
+*.bak
+
+# J-Link 调试日志（tools/*.jlink 是脚本，要保留，不要忽略）
+JLinkLog.txt
+JLinkSettings.ini
+*.log
+
+# ============ 安装包 / 大二进制（绝不入库） ============
+_pkg/
+*.exe
+*.msi
+*.iso
+
+# ============ Python 缓存 ============
+__pycache__/
+*.pyc
+.venv/
+
+# ============ 编辑器 / 系统 ============
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini

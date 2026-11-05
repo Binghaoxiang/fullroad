@@ -1,0 +1,10 @@
+si 1
+speed 100
+device STM32F429IG
+connect
+rx 2
+h
+regs
+mem 0xE000ED00 4
+mem 0x1FFFC000 4
+q

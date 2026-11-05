@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>探测器实时监视 · Severo</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0f14; color:#d7e3ee;
+         font-family:"Microsoft YaHei",Consolas,monospace; }
+  header { display:flex; align-items:center; gap:14px; padding:12px 18px;
+           background:#121a24; border-bottom:1px solid #1e2a38; flex-wrap:wrap; }
+  h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:1px; }
+  button { background:#1c72d4; color:#fff; border:0; padding:7px 16px;
+           border-radius:6px; font-size:13px; cursor:pointer; }
+  button:disabled { background:#2a3a4c; color:#7089a2; cursor:default; }
+  button.off { background:#8c2b2b; }
+  .stat { padding:5px 12px; background:#16212e; border-radius:6px; font-size:13px; }
+  .stat b { color:#4fd1c5; font-weight:600; }
+  main { display:flex; gap:26px; padding:18px; flex-wrap:wrap; }
+  .board { background:#101823; border:1px solid #1d2a39; border-radius:10px; padding:14px; }
+  .board h2 { margin:0 0 10px; font-size:14px; color:#8fb3d6; font-weight:600; }
+  table { border-collapse:collapse; }
+  td { width:46px; height:34px; text-align:center; font-size:11px;
+       border:1px solid #1b2836; border-radius:4px; transition:background .08s; }
+  td.hd { border:0; color:#5f7c98; font-size:10px; width:26px; }
+  .lit { box-shadow:0 0 12px 2px rgba(255,224,102,.75); color:#101010 !important;
+         font-weight:700; }
+  footer { padding:10px 18px; color:#5f7c98; font-size:12px; border-top:1px solid #1e2a38; }
+  #log { max-height:110px; overflow:auto; padding:8px 18px; font-size:11px;
+         color:#48627d; white-space:pre-wrap; }
+  label { font-size:12px; color:#8fb3d6; display:flex; align-items:center; gap:6px; }
+  input[type=range] { width:130px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>探测器实时监视</h1>
+  <button id="btn">连接串口</button>
+  <span class="stat">A(长边) <b id="sa">0</b></span>
+  <span class="stat">B(短边) <b id="sb">0</b></span>
+  <span class="stat">S <b id="ss">0</b></span>
+  <span class="stat">P <b id="sp">0</b></span>
+  <label>点亮阈值 <input id="th" type="range" min="0" max="4000" value="600" step="50">
+    <b id="thv">600</b></label>
+</header>
+
+<main>
+  <div class="board">
+    <h2>板 A · 长边（EN1~EN4 × CH0~CHF）</h2>
+    <table id="ta"></table>
+  </div>
+  <div class="board">
+    <h2>板 B · 短边（EN1~EN4 × CH0~CHF）</h2>
+    <table id="tb"></table>
+  </div>
+</main>
+
+<div id="log"></div>
+<footer>Chrome / Edge 打开 → 点"连接串口" → 选 COM5（115200）→ 用灯光照探测器，最亮那格会发光。</footer>
+
+<script>
+const ROWS = 4, COLS = 16;
+const hex = "0123456789ABCDEF";
+const thEl = document.getElementById('th');
+const thv  = document.getElementById('thv');
+thEl.oninput = () => { thv.textContent = thEl.value; };
+
+/* ---- 建表 ---- */
+function buildTable(id) {
+  const t = document.getElementById(id);
+  let h = '<tr><td class="hd"></td>';
+  for (let c = 0; c < COLS; c++) h += `<td class="hd">${hex[c]}</td>`;
+  h += '</tr>';
+  for (let r = 0; r < ROWS; r++) {
+    h += `<tr><td class="hd">R${r + 1}</td>`;
+    for (let c = 0; c < COLS; c++) h += `<td id="${id}_${r}_${c}">-</td>`;
+    h += '</tr>';
+  }
+  t.innerHTML = h;
+}
+buildTable('ta'); buildTable('tb');
+
+/* ---- 渲染 ---- */
+function render(id, cells, thr) {
+  let max = 1;
+  for (const row of cells) for (const v of row) if (v > max) max = v;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const v = cells[r][c];
+      const el = document.getElementById(`${id}_${r}_${c}`);
+      el.textContent = v;
+      const k = Math.min(1, v / max);
+      el.style.background = `rgba(38,160,255,${(0.05 + k * 0.85).toFixed(3)})`;
+      el.classList.toggle('lit', v >= thr);
+    }
+  }
+}
+
+/* ---- 串口 ---- */
+let port = null, writer = null, reader = null, running = false;
+let buf = "";
+let frames = [];        // 最近解析到的两块板数据
+let expect = { a: 0, b: 0, ra: 0, rb: 0, cur: null };
+
+const logEl = document.getElementById('log');
+function log(s) {
+  logEl.textContent += s + "\n";
+  if (logEl.textContent.length > 4000) logEl.textContent = logEl.textContent.slice(-3000);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* 解析 K RAW 的输出 */
+let dataA = null, dataB = null, rowIdx = 0;
+function parseLine(line) {
+  const L = line.trim();
+  if (!L) return;
+
+  if (L.startsWith('# A')) { dataA = []; rowIdx = 0; return; }
+  if (L.startsWith('# B')) { dataB = []; rowIdx = 0; return; }
+
+  if (/^R[1-4]\s/.test(L)) {
+    const nums = L.replace(/^R[1-4]\s+/, '').trim().split(/\s+/)
+                  .map(x => parseInt(x, 10)).filter(x => !isNaN(x));
+    if (nums.length >= COLS) {
+      const row = nums.slice(0, COLS);
+      if (dataA && dataA.length < ROWS) { dataA.push(row); }
+      else if (dataB && dataB.length < ROWS) { dataB.push(row); }
+    }
+    return;
+  }
+
+  const m = L.match(/^A=(\d+)\s+B=(\d+)\s+S=(-?\d+)\s+P=(\d+)/);
+  if (m) {
+    document.getElementById('sa').textContent = m[1];
+    document.getElementById('sb').textContent = m[2];
+    document.getElementById('ss').textContent = m[3];
+    document.getElementById('sp').textContent = m[4];
+    const thr = parseInt(thEl.value, 10);
+    if (dataA && dataA.length === ROWS) render('ta', dataA, thr);
+    if (dataB && dataB.length === ROWS) render('tb', dataB, thr);
+    dataA = null; dataB = null;
+  }
+}
+
+function feed(chunk) {
+  buf += chunk;
+  let i;
+  while ((i = buf.indexOf("\n")) >= 0) {
+    const line = buf.slice(0, i).replace(/\r$/, "");
+    buf = buf.slice(i + 1);
+    parseLine(line);
+  }
+  if (buf.length > 4000) buf = "";
+}
+
+/* ---- 主循环 ---- */
+async function start() {
+  port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+  writer = port.writable.getWriter();
+  const enc = new TextEncoder();
+  running = true;
+  document.getElementById('btn').textContent = "断开";
+  document.getElementById('btn').classList.add('off');
+  log("已连接 " + (port.getInfo().usbVendorId || "") + "  115200 8N1");
+
+  // 持续读
+  (async () => {
+    const dec = new TextDecoder();
+    while (running && port.readable) {
+      reader = port.readable.getReader();
+      try {
+        while (running) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) feed(dec.decode(value, { stream: true }));
+        }
+      } catch (e) { if (running) log("读错误: " + e.message); }
+      finally { try { reader.releaseLock(); } catch (e) {} }
+    }
+  })();
+
+  // 定时轮询 K RAW
+  while (running) {
+    try { await writer.write(enc.encode("K RAW\r\n")); }
+    catch (e) { log("写错误: " + e.message); break; }
+    await new Promise(r => setTimeout(r, 450));
+  }
+}
+
+async function stop() {
+  running = false;
+  try { if (reader) await reader.cancel(); } catch (e) {}
+  try { if (writer) writer.releaseLock(); } catch (e) {}
+  try { if (port) await port.close(); } catch (e) {}
+  port = null; writer = null; reader = null;
+  document.getElementById('btn').textContent = "连接串口";
+  document.getElementById('btn').classList.remove('off');
+  log("已断开");
+}
+
+document.getElementById('btn').onclick = async () => {
+  if (running) { await stop(); return; }
+  if (!('serial' in navigator)) {
+    alert("这个浏览器不支持 Web Serial。\n请用 Chrome 或 Edge 打开本文件。");
+    return;
+  }
+  try { await start(); } catch (e) { log("连接失败: " + e.message); }
+};
+</script>
+</body>
+</html>

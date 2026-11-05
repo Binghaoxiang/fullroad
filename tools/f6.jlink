@@ -1,0 +1,11 @@
+si 1
+speed 1000
+device STM32F429IG
+connect
+loadfile C:\Users\a\Desktop\Pro\Laser_communication\Software\Severo\MDK-ARM\Objects\Severo.hex
+r
+g
+Sleep 1500
+mem 0x40022000 4
+mem 0x40021C00 4
+q
