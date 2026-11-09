@@ -27,6 +27,15 @@ static const en_t k_en_b[ADC64_ROWS] = {
     { ADC64_EN_B_PORT_3, ADC64_EN_B_PIN_3 },
     { ADC64_EN_B_PORT_4, ADC64_EN_B_PIN_4 }
 };
+/* 板 C 的行选（FPC13 pin6-9 -> EN13..EN16 = PG3/PG2/PD15/PD14） */
+static const en_t k_en_c[ADC64_ROWS] = {
+    { GPIOG,  3U }, { GPIOG,  2U }, { GPIOD, 15U }, { GPIOD, 14U }
+};
+
+/* 板 D 的行选（FPC14 pin6-9 -> EN09..EN12 = PG7/PG6/PG5/PG4） */
+static const en_t k_en_d[ADC64_ROWS] = {
+    { GPIOG,  7U }, { GPIOG,  6U }, { GPIOG,  5U }, { GPIOG,  4U }
+};
 
 static cs_t k_cs[ADC64_BOARD_COUNT] = {
     { ADC64_A_CS_PORT, ADC64_A_CS_PIN },   /* E0 下长边 */
@@ -78,6 +87,8 @@ static void en_off_all(void)
     for (r = 0U; r < ADC64_ROWS; r++) {
         en_low(&k_en_a[r]);
         en_low(&k_en_b[r]);
+        en_low(&k_en_c[r]);
+        en_low(&k_en_d[r]);
     }
 }
 
@@ -104,8 +115,12 @@ static void en_on(uint8_t row)
     for (r = 0U; r < ADC64_ROWS; r++) {
         if (r == row) {
             en_high(&k_en_a[r]);
+            en_high(&k_en_c[r]);
+            en_high(&k_en_d[r]);
             en_high(&k_en_b[r]);
         } else {
+            en_low(&k_en_c[r]);
+            en_low(&k_en_d[r]);
             en_low(&k_en_a[r]);
             en_low(&k_en_b[r]);
         }
@@ -160,11 +175,14 @@ void adc64_init(void)
 
     /* EN 行选时钟 */
     RCC->AHB1ENR |= ADC64_EN_GPIO_AHB1EN | RCC_AHB1ENR_GPIOHEN;
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOGEN;
     (void)RCC->AHB1ENR;
     (void)RCC->AHB1ENR;
 
     for (i = 0U; i < ADC64_ROWS; i++) {
         en_gpio_cfg(&k_en_a[i]);
+        en_gpio_cfg(&k_en_c[i]);
+        en_gpio_cfg(&k_en_d[i]);
         en_gpio_cfg(&k_en_b[i]);
     }
 
