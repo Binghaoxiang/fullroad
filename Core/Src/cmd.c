@@ -1697,35 +1697,44 @@ static void do_track(char *arg)
         uart_puts("CSCAN done\r\n");
         return;
     }    if (eqi(tok, "CS") != 0U) {
-        /* 每调用一次自动切到下一个候选片选引脚，打印结果，便于用串口逐个试 */
+        /* 候选片选引脚：逐个试，看哪个能读出上长边(板C)的数据 */
+        typedef struct { GPIO_TypeDef *port; uint8_t pin; const char *nm; } cand_t;
+        static const cand_t cand[] = {
+            { GPIOC, 13U, "PC13" }, { GPIOC, 14U, "PC14" }, { GPIOC, 15U, "PC15" },
+            { GPIOI,  9U, "PI9"  }, { GPIOI, 10U, "PI10" }, { GPIOI, 11U, "PI11" },
+            { GPIOI, 12U, "PI12" }, { GPIOH,  4U, "PH4"  }, { GPIOH,  5U, "PH5"  },
+            { GPIOH,  6U, "PH6"  }, { GPIOG,  6U, "PG6"  }, { GPIOG,  7U, "PG7"  },
+            { GPIOF,  1U, "PF1"  }, { GPIOB,  0U, "PB0"  }
+        };
         static uint8_t idx = 0U;
-        static const char    cp[10] = { 'I','I','I','I','I','I','F','C','G','H' };
-        static const uint8_t pp[10] = {  8U, 11U, 5U, 6U, 7U, 9U, 1U, 14U, 6U, 5U };
         static adc64_frame_t fr;
+        cs_t save;
         uint32_t mx;
         uint16_t i;
         uint16_t v2;
+        uint8_t nn = (uint8_t)(sizeof(cand) / sizeof(cand[0]));
 
-        if (idx >= 10U) { idx = 0U; }
-        adc64_set_cs_pin(0U, cp[idx], pp[idx]);
+        if (idx >= nn) { idx = 0U; }
+
+        save = k_cs_direct_get(0U);
+        k_cs_direct_set(0U, cand[idx].port, cand[idx].pin);
+        cand[idx].port->BSRR = (1UL << cand[idx].pin);
 
         adc64_set_en_hold(0U);
         adc64_scan(&fr);
+        k_cs_direct_restore(0U, save);
 
         mx = 0U;
-        for (i = 21U; i < 64U; i++) {
+        for (i = 7U; i <= 22U; i++) {
             v2 = fr.cell[0][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
             if ((uint32_t)v2 > mx) { mx = (uint32_t)v2; }
         }
-        uart_puts("TRY");
-        uart_put_u32((uint32_t)idx);
-        uart_puts(" P");
-        uart_putc(cp[idx]);
-        uart_put_u32((uint32_t)pp[idx]);
-        uart_puts(" MAX=");
+        uart_puts("TRY ");
+        uart_puts(cand[idx].nm);
+        uart_puts("  E2max=");
         uart_put_u32(mx);
         uart_puts("\r\n");
-        idx++;
+        idx = (uint8_t)(idx + 1U);
         return;
     }    if (eqi(tok, "T1") != 0U) { uart_puts("T1 delay start\r\n"); adc64_diag_delay(1000U); uart_puts("T1 delay ok\r\n"); return; }
     if (eqi(tok, "T2") != 0U) { uint16_t r2; uart_puts("T2 spi start\r\n"); r2 = adc64_diag_spi(); uart_puts("T2 spi ok="); uart_put_u32((uint32_t)r2); uart_puts("\r\n"); return; }

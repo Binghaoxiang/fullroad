@@ -13,11 +13,6 @@ typedef struct
     uint8_t       pin;
 } en_t;
 
-typedef struct
-{
-    GPIO_TypeDef *port;
-    uint8_t       pin;
-} cs_t;
 
 static const en_t k_en_a[ADC64_ROWS] = {
     { ADC64_EN_A_PORT_1, ADC64_EN_A_PIN_1 },
@@ -145,6 +140,11 @@ void adc64_init(void)
     GPIOI->BSRR  = (1UL << 8);
 
     /* 新增两板的片选：PC13（上长边 FPC13）/ PI9（左短边 FPC14） */
+    /* PC13 属备份域：需先开 PWR 时钟并解除写保护 */
+    RCC->APB1ENR |= RCC_APB1ENR_PWREN;
+    (void)RCC->APB1ENR;
+    PWR->CR |= PWR_CR_DBP;
+
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     (void)RCC->AHB1ENR;
     GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);
@@ -653,6 +653,13 @@ uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out)
 }
 
 /* 一次扫描，提取四条边的全部数据（避免重复扫描） */
+/* 把两块板的片选都拉高（未选中），避免并联 MISO 冲突 */
+static void cs_all_high(void)
+{
+    k_cs[0].port->BSRR = (1UL << k_cs[0].pin);
+    k_cs[1].port->BSRR = (1UL << k_cs[1].pin);
+}
+
 /* 提取一条边到目标缓冲（从 fr.cell[src] 取） */
 static uint8_t edge_extract(const adc64_frame_t *fr, uint8_t src,
                             uint8_t e, uint16_t *dst)
@@ -815,3 +822,27 @@ void adc64_diag_bank(uint16_t *dst)
     read_bank(0U, dst);
     en_off_all();
 }
+
+/* 片选直接存取（供候选扫描用） */
+cs_t k_cs_direct_get(uint8_t b) { return k_cs[b]; }
+void k_cs_direct_set(uint8_t b, GPIO_TypeDef *port, uint8_t pin)
+{
+    uint32_t sh = (uint32_t)pin * 2U;
+    if (port == GPIOC) { RCC->APB1ENR |= RCC_APB1ENR_PWREN; PWR->CR |= PWR_CR_DBP; }
+    if (port == GPIOC) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; }
+    else if (port == GPIOI) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOIEN; }
+    else if (port == GPIOH) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOHEN; }
+    else if (port == GPIOG) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOGEN; }
+    else if (port == GPIOF) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOFEN; }
+    else { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN; }
+    (void)RCC->AHB1ENR;
+
+    port->MODER = (port->MODER & ~(3UL << sh)) | (1UL << sh);
+    port->OTYPER &= ~(1UL << pin);
+    port->OSPEEDR |= (3UL << sh);
+    port->BSRR = (1UL << pin);
+
+    k_cs[b].port = port;
+    k_cs[b].pin  = pin;
+}
+void k_cs_direct_restore(uint8_t b, cs_t v) { k_cs[b] = v; }

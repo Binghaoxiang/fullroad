@@ -27,8 +27,11 @@ extern "C" {
 #define ADC64_ROWS   4U
 #define ADC64_COLS   16U
 
+typedef struct { GPIO_TypeDef *port; uint8_t pin; } cs_t;
+
 typedef struct
 {
+
     /* [板][行][列]，12bit 原始码值 */
     uint16_t cell[ADC64_BOARD_COUNT][ADC64_ROWS][ADC64_COLS];
     /* 每块板按 include 掩码求和 */
@@ -59,6 +62,9 @@ uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out);
 void     adc64_diag_delay(uint32_t us);
 uint16_t adc64_diag_spi(void);
 void     adc64_diag_bank(uint16_t *dst);
+cs_t     k_cs_direct_get(uint8_t b);
+void     k_cs_direct_set(uint8_t b, GPIO_TypeDef *port, uint8_t pin);
+void     k_cs_direct_restore(uint8_t b, cs_t v);
 uint8_t  adc64_set_cs_pin(uint8_t slot, char port, uint8_t pin);
 uint32_t adc64_probe_cs(GPIO_TypeDef *port, uint8_t pin, uint8_t edge);
 void     adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3,
