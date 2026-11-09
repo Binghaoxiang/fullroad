@@ -167,10 +167,10 @@ void adc64_init(void)
     GPIOC->OSPEEDR |= (3UL << 26);
     GPIOC->BSRR = (1UL << 13);
 
-    GPIOI->MODER = (GPIOI->MODER & ~(3UL << 18)) | (1UL << 18);
-    GPIOI->OTYPER &= ~(1UL << 9);
-    GPIOI->OSPEEDR |= (3UL << 18);
-    GPIOI->BSRR = (1UL << 9);
+    GPIOC->MODER = (GPIOC->MODER & ~(3UL << 30)) | (1UL << 30);
+    GPIOC->OTYPER &= ~(1UL << 15);
+    GPIOC->OSPEEDR |= (3UL << 30);
+    GPIOC->BSRR = (1UL << 15);
     GPIOH->BSRR  = (1UL << 4);
 
     /* EN 行选时钟 */
@@ -211,18 +211,18 @@ static uint16_t read_frame(uint8_t board, uint8_t col)
     uint16_t rx;
 
     cs_low(board);
-    board_delay_us(s_acc_us);
+    board_delay_us(60U);
     (void)board_spi_transfer16(cmd);
     board_delay_us(5);
     cs_high(board);
-    board_delay_us(s_acc_us);
+    board_delay_us(60U);
 
     cs_low(board);
-    board_delay_us(s_acc_us);
+    board_delay_us(60U);
     rx = board_spi_transfer16(cmd);
     board_delay_us(5);
     cs_high(board);
-    board_delay_us(s_acc_us);
+    board_delay_us(60U);
 
     return (uint16_t)(rx & 0x0FFFU);
 }
@@ -241,7 +241,7 @@ static void read_bank(uint8_t board, uint16_t *dst)
         uint16_t cmd = (uint16_t)(0x1000U | ((ch & 0x0FU) << 7));
 
         cs_low(board);
-        board_delay_us(s_acc_us);
+        board_delay_us(60U);
         rx = board_spi_transfer16(cmd);
         board_delay_us(5);
         cs_high(board);
@@ -263,7 +263,7 @@ void adc64_scan(adc64_frame_t *f)
         uint8_t w;
         for (w = 0U; w < 4U; w++) {
             cs_low(0U);
-            board_delay_us(s_acc_us);
+            board_delay_us(60U);
             (void)board_spi_transfer16(0x0000U);
             cs_high(0U);
             board_delay_us(50);
@@ -362,13 +362,13 @@ void adc64_echo_test(uint8_t board, uint16_t *out)
     for (c = 0U; c < ADC64_COLS; c++) {
         cmd = (uint16_t)((uint16_t)c << s_cmd_shift);
         cs_low(board);
-        board_delay_us(s_acc_us);
+        board_delay_us(60U);
         (void)board_spi_transfer16(cmd);
         board_delay_us(5);
         cs_high(board);
         board_delay_us(50);
         cs_low(board);
-        board_delay_us(s_acc_us);
+        board_delay_us(60U);
         rx = board_spi_transfer16(cmd);
         board_delay_us(5);
         cs_high(board);
@@ -387,7 +387,7 @@ void adc64_read_column(uint8_t ch, uint16_t *out)
     /* 与 adc64_scan 一致：先发 4 个 0x0000 强制进入手动模式 */
     for (k = 0U; k < 4U; k++) {
         cs_low(0U);
-        board_delay_us(s_acc_us);
+        board_delay_us(60U);
         (void)board_spi_transfer16(0x0000U);
         cs_high(0U);
         board_delay_us(50);
