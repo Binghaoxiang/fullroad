@@ -467,6 +467,15 @@ static void do_version(void)
     uart_puts(" PWM=50Hz 0.5us, UART=");
     uart_put_u32(BOARD_UART_BAUD);
     uart_puts(" 8N1\r\n");
+    uart_puts("REG C=");    uart_put_u32(GPIOC->MODER);
+    uart_puts(" D=");       uart_put_u32(GPIOD->MODER);
+    uart_puts(" G=");       uart_put_u32(GPIOG->MODER);  uart_puts("\r\n");
+    uart_puts("REG H=");    uart_put_u32(GPIOH->MODER);
+    uart_puts(" I=");       uart_put_u32(GPIOI->MODER);  uart_puts("\r\n");
+    uart_puts("REG ENR=");  uart_put_u32(RCC->AHB1ENR);  uart_puts("\r\n");
+    uart_puts("REG ODR C="); uart_put_u32((GPIOC->ODR >> 13) & 1U);
+    uart_puts(" G=");        uart_put_u32(GPIOG->ODR & 0xF0U);
+    uart_puts(" D=");        uart_put_u32((GPIOD->ODR >> 14) & 3U); uart_puts("\r\n");
 }
 
 static void do_sweep(void)
@@ -1783,27 +1792,6 @@ static void do_track(char *arg)
             uart_puts("\r\n");
         }
         return;
-    }    if (eqi(tok, "REG") != 0U) {
-        /* 读 GPIO 配置寄存器，确认板 C/D 的 EN 与 CS 是否真的配成了输出 */
-        uart_puts("GPIOC MODER="); uart_put_u32(GPIOC->MODER);
-        uart_puts(" ODR13=");      uart_put_u32((GPIOC->ODR >> 13) & 1U);
-        uart_puts("\r\n");
-        uart_puts("GPIOD MODER="); uart_put_u32(GPIOD->MODER);
-        uart_puts(" ODR14=");      uart_put_u32((GPIOD->ODR >> 14) & 1U);
-        uart_puts(" ODR15=");      uart_put_u32((GPIOD->ODR >> 15) & 1U);
-        uart_puts("\r\n");
-        uart_puts("GPIOG MODER="); uart_put_u32(GPIOG->MODER);
-        uart_puts(" ODR2=");       uart_put_u32((GPIOG->ODR >> 2) & 1U);
-        uart_puts(" ODR3=");       uart_put_u32((GPIOG->ODR >> 3) & 1U);
-        uart_puts(" ODR4-7=");     uart_put_u32((GPIOG->ODR >> 4) & 0x0FU);
-        uart_puts("\r\n");
-        uart_puts("GPIOI MODER="); uart_put_u32(GPIOI->MODER);
-        uart_puts(" ODR8=");       uart_put_u32((GPIOI->ODR >> 8) & 1U);
-        uart_puts(" ODR9=");       uart_put_u32((GPIOI->ODR >> 9) & 1U);
-        uart_puts("\r\n");
-        uart_puts("AHB1ENR=");     uart_put_u32(RCC->AHB1ENR);
-        uart_puts("\r\n");
-        return;
     }    if (eqi(tok, "POS") != 0U) {
         static adc64_frame_t fr;
         uint8_t r;
@@ -1896,6 +1884,26 @@ void cmd_telem_poll(void)
 /*----------------------------------------------------------------------------
  * 命令分发
  *--------------------------------------------------------------------------*/
+/* 顶层诊断：打印引脚配置寄存器 */
+static void do_regdump(void)
+{
+    uart_puts("C MODER=");  uart_put_u32(GPIOC->MODER);
+    uart_puts(" ODR13=");   uart_put_u32((GPIOC->ODR >> 13) & 1U);
+    uart_puts("\r\n");
+    uart_puts("D MODER=");  uart_put_u32(GPIOD->MODER);
+    uart_puts(" ODR14=");   uart_put_u32((GPIOD->ODR >> 14) & 1U);
+    uart_puts(" ODR15=");   uart_put_u32((GPIOD->ODR >> 15) & 1U);
+    uart_puts("\r\n");
+    uart_puts("G MODER=");  uart_put_u32(GPIOG->MODER);
+    uart_puts(" ODR6=");    uart_put_u32((GPIOG->ODR >> 6) & 1U);
+    uart_puts(" ODR7=");    uart_put_u32((GPIOG->ODR >> 7) & 1U);
+    uart_puts("\r\n");
+    uart_puts("AHB1ENR=");  uart_put_u32(RCC->AHB1ENR);
+    uart_puts("\r\n");
+    uart_puts("I MODER=");  uart_put_u32(GPIOI->MODER);
+    uart_puts("\r\n");
+}
+
 void cmd_exec(char *line)
 {
     char  cmd;
@@ -1926,6 +1934,8 @@ void cmd_exec(char *line)
     case 'P': do_pulse(arg);            break;
     case 'C': do_center();              break;
     case 'L': do_limits(arg);           break;
+    case ']': do_regdump();             break;
+    case '@': do_regdump();             break;
     case 'W': do_calib(arg);            break;
     case 'T': do_trim(arg);             break;
     case 'S': do_speed(arg);            break;

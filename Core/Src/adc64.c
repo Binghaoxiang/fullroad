@@ -160,6 +160,7 @@ void adc64_init(void)
     (void)RCC->APB1ENR;
     PWR->CR |= PWR_CR_DBP;
 
+
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
     (void)RCC->AHB1ENR;
     GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);

@@ -127,15 +127,13 @@ class App:
         # ---- 跟随控制 ----
 
         self.tracking = False
-
-        self.servo_deg = 0.0
+        self.servo_deg = 90.0   # 上电中位 = 屏幕中心
 
         self.dir_sign = None          # 舵机方向与 X 的关系，校准后确定
-
-        self.db_mm = 3.0              # 死区
-        self.kp_us = 6.0        # 比例：每 mm 误差对应多少 us 偏离
-        self.max_dev = 350      # 最大脉宽偏离（us）
-        self.min_dev = 40       # 最小脉宽偏离（us）
+        self.db_mm = 2.0        # 死区 mm
+        self.kp = 0.06          # PID: 每 mm 误差对应多少度
+        self.ki = 0.008         # 积分项
+        self.kd = 0.02          # 微分项
 
         self.last_cmd = 0.0
 
@@ -144,7 +142,7 @@ class App:
         self.prev_step_sign = 0
         self.worse_count = 0
         self.max_deg = 175.0
-        self.min_deg = 0.0
+        self.min_deg = 5.0
         self.fast_x = None        # 快速 X（mm）
         self.fast_peak = 0
         self.fast_age = 0.0
@@ -545,81 +543,75 @@ class App:
         self.last_pulse = us
 
     def track_step(self):
-        """连续旋转舵机的速度控制
+        """Y 轴单轴 PID 位置控制
 
-        P1500 = 停止；偏离 1500 越多转得越快。
-        误差 > 死区 -> 按比例给偏离；误差 < 死区 -> P1500 停住。
-        方向自动学习：若连续两次误差变大，翻转方向。
+        用两个短边（E1 右 + E3 左）融合出 Y，目标 Y = 50mm（屏幕中心）。
+        误差 -> PID -> 舵机角度增量 -> 发 A 命令。
+        舵机上电 90 度 = 屏幕中心。
         """
         if not self.tracking:
             return
 
-        # ---- 取当前 X ----
-        x = None
-        if self.fast_x is not None and (time.time() - self.fast_age) < 0.6:
-            x = self.fast_x
-        elif self.pos and self.pos.valid:
-            x = self.pos.x_mm
+        # ---- 取 Y（只用两个短边）----
+        y = None
+        if self.pos and self.pos.valid:
+            ys = []
+            ws = []
+            if self.pos.y1 is not None:
+                ys.append(self.pos.y1)
+                ws.append(self.pos.wy1)
+            if self.pos.y3 is not None:
+                ys.append(self.pos.y3)
+                ws.append(self.pos.wy3)
+            if ys and sum(ws) > 0:
+                y = sum(a * b for a, b in zip(ys, ws)) / sum(ws)
+            elif ys:
+                y = sum(ys) / len(ys)
 
-        # 无有效信号 -> 停住，避免乱转
-        if x is None:
-            if getattr(self, "last_pulse", 1500) != 1500:
-                self._pulse(1500)
-            self.prev_err = None
+        if y is None:
+            self.integral = 0.0
+            self.prev_e = None
+            self.stat.config(text="等待 Y 数据（需要短边有信号）")
             return
 
-        err = (SCREEN_W_MM / 2.0) - x        # 目标 X = 100mm
+        # ---- 误差 ----
+        err = (SCREEN_H_MM / 2.0) - y      # 目标 Y = 50mm
         aerr = abs(err)
 
-        # ---- 方向自动学习 ----
-        if self.prev_err is not None and getattr(self, "last_pulse", 1500) != 1500:
-            if aerr > self.prev_err + 0.6:
-                self.worse_count += 1
-                if self.worse_count >= 2:
-                    self.dir_sign = -self.dir_sign
-                    self.worse_count = 0
-                    self._pulse(1500)        # 先停一下再换向
-                    self.stat.config(
-                        text="方向已翻转 -> %s    X=%.1f"
-                             % ("+" if self.dir_sign > 0 else "-", x))
-                    return
-            else:
-                self.worse_count = 0
-        self.prev_err = aerr
-
-        # ---- 死区：停住 ----
         if aerr < self.db_mm:
-            if getattr(self, "last_pulse", 1500) != 1500:
-                self._pulse(1500)
+            self.integral = 0.0
+            self.prev_e = None
+            self.stat.config(text="已对准  Y=%.1f  err=%+.1f" % (y, err))
             return
 
-        # ---- 限位保护 ----
-        # 用累计的等效角度做软限位（P1500 为 90 度）
-        if self.servo_deg >= self.max_deg and err * self.dir_sign > 0:
-            self._pulse(1500)
-            self.stat.config(text="已达正限位")
+        # ---- PID ----
+        self.integral += err * 0.15
+        self.integral = max(-200.0, min(200.0, self.integral))
+        deriv = 0.0 if self.prev_e is None else (err - self.prev_e)
+        self.prev_e = err
+
+        u = (self.kp * err) + (self.ki * self.integral) + (self.kd * deriv)
+        u = max(-self.out_max, min(self.out_max, u))
+
+        # ---- 方向 + 限幅 ----
+        delta = u * self.dir_sign
+        new_deg = self.servo_deg + delta
+        if new_deg > self.max_deg:
+            new_deg = self.max_deg
+        elif new_deg < self.min_deg:
+            new_deg = self.min_deg
+        delta = new_deg - self.servo_deg
+        if abs(delta) < 0.05:
             return
-        if self.servo_deg <= self.min_deg and err * self.dir_sign < 0:
-            self._pulse(1500)
-            self.stat.config(text="已达负限位")
-            return
 
-        # ---- 比例速度控制 ----
-        dev = self.kp_us * aerr
-        dev = max(self.min_dev, min(self.max_dev, dev))
+        self.servo_deg = new_deg
+        self._send("A %.2f" % self.servo_deg)
+        self.last_cmd = time.time()
 
-        # err>0 表示 X 偏小，需要往正方向拉
-        sgn = 1 if err > 0 else -1
-        pulse = 1500 + self.dir_sign * dev * sgn
-
-        self._pulse(pulse)
-
-        # 估算等效角度（用于软限位）
-        self.servo_deg += (pulse - 1500) * 0.02
-
-        self.stat.config(text="跟随中  X=%.1f  err=%+.1f  P=%d  dir=%s"
-                              % (x, err, int(round(pulse)),
-                                 "+" if self.dir_sign > 0 else "-"))
+        self.stat.config(
+            text="Y轴跟随  Y=%.1f  err=%+.1f  A=%.1f°  dir=%s"
+                 % (y, err, self.servo_deg,
+                    "+" if self.dir_sign > 0 else "-"))
 
     def _send(self, cmd):
 
