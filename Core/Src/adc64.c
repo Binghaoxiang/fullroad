@@ -164,7 +164,7 @@ void adc64_init(void)
     (void)RCC->AHB1ENR;
     GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);
     GPIOC->OTYPER &= ~(1UL << 13);
-    GPIOC->OSPEEDR |= (3UL << 26);
+    GPIOC->OSPEEDR &= ~(3UL << 26);   /* PC13 限 2MHz，设为低速 */
     GPIOC->BSRR = (1UL << 13);
 
     GPIOI->MODER = (GPIOI->MODER & ~(3UL << 18)) | (1UL << 18);

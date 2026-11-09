@@ -1739,7 +1739,30 @@ static void do_track(char *arg)
     }    if (eqi(tok, "T1") != 0U) { uart_puts("T1 delay start\r\n"); adc64_diag_delay(1000U); uart_puts("T1 delay ok\r\n"); return; }
     if (eqi(tok, "T2") != 0U) { uint16_t r2; uart_puts("T2 spi start\r\n"); r2 = adc64_diag_spi(); uart_puts("T2 spi ok="); uart_put_u32((uint32_t)r2); uart_puts("\r\n"); return; }
     if (eqi(tok, "T3") != 0U) { static adc64_frame_t f3; uart_puts("T3 bank start\r\n"); adc64_diag_bank(f3.cell[0][0]); uart_puts("T3 bank ok\r\n"); return; }
-    if (eqi(tok, "T4") != 0U) { static adc64_frame_t f4; uart_puts("T4 scan start\r\n"); adc64_scan(&f4); uart_puts("T4 scan ok\r\n"); return; }    if (eqi(tok, "POS") != 0U) {
+    if (eqi(tok, "T4") != 0U) { static adc64_frame_t f4; uart_puts("T4 scan start\r\n"); adc64_scan(&f4); uart_puts("T4 scan ok\r\n"); return; }    if (eqi(tok, "T5") != 0U) {
+        /* 诊断：驱动 PC13 高低，读回 IDR，判断引脚是否真的被拉动 */
+        uint32_t hi, lo;
+        RCC->APB1ENR |= RCC_APB1ENR_PWREN; (void)RCC->APB1ENR;
+        PWR->CR |= PWR_CR_DBP;
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; (void)RCC->AHB1ENR;
+        GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);
+        GPIOC->OTYPER &= ~(1UL << 13);
+        GPIOC->PUPDR &= ~(3UL << 26);
+
+        GPIOC->BSRR = (1UL << 13);
+        board_delay_us(200U);
+        hi = (GPIOC->IDR >> 13) & 1U;
+        GPIOC->BSRR = (1UL << (13U + 16U));
+        board_delay_us(200U);
+        lo = (GPIOC->IDR >> 13) & 1U;
+
+        uart_puts("PC13 drive high->IDR=");
+        uart_put_u32(hi);
+        uart_puts("  low->IDR=");
+        uart_put_u32(lo);
+        uart_puts("\r\n");
+        return;
+    }    if (eqi(tok, "POS") != 0U) {
         static adc64_frame_t fr;
         uint8_t r;
         uint8_t c;
