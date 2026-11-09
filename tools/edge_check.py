@@ -20,6 +20,8 @@ except ImportError:
     sys.path.insert(0, "tools/_libs")
     import serial
 
+import edge_dsp
+
 # ---------------- 边定义 ----------------
 EDGES = [
     ("E0", "下长边", "D25 → D4F", "左 → 右", 21, 63, False, "#00d1ff"),
@@ -50,6 +52,7 @@ CARD = "#0d1620"
 TXT = "#e8eef6"
 DIM = "#7d8fa3"
 ACC = "#00d1ff"
+WARN = "#ffb020"
 NOISE = 250
 FULL = 4096.0
 
@@ -65,6 +68,10 @@ class App:
         self.ok = 0
         self.bad = 0
         self.data = [None] * 4
+        self.proc = [None] * 4
+        self.base = [None] * 4
+        self.tracker = [edge_dsp.Tracker(0.5, 0.1) for _ in range(4)]
+        self.show_raw = True
         self.last = 0.0
 
         root.title("四边探测器顺序核对（拆开显示）")
@@ -83,6 +90,7 @@ class App:
                  font=("Consolas", 11)).pack(side="left", ipady=3)
         self.mk(bar, "连接", self.connect, ACC)
         self.mk(bar, "断开", self.disconnect, DIM)
+        self.mk(bar, "原始/处理", self.toggle_raw, WARN)
         self.stat = tk.Label(bar, text="未连接", bg=PANEL, fg=DIM,
                              font=("Microsoft YaHei", 10))
         self.stat.pack(side="right", padx=18)
@@ -103,6 +111,10 @@ class App:
                       relief="flat", bd=0, width=w, cursor="hand2",
                       font=("Microsoft YaHei", 10, "bold"))
         b.pack(side="left", padx=5, pady=8)
+
+    def toggle_raw(self):
+        self.show_raw = not self.show_raw
+        self.stat.config(text="显示原始数据" if self.show_raw else "显示处理后")
 
     def connect(self):
         self.disconnect()
@@ -159,6 +171,12 @@ class App:
                         break
                 for k, v in got.items():
                     self.data[k] = v
+                    n = len(v)
+                    if self.base[k] is None or len(self.base[k].base) != n:
+                        self.base[k] = edge_dsp.Baseline(n, 0.02)
+                    self.proc[k] = edge_dsp.process_edge(
+                        v, self.base[k], thr_ratio=0.25,
+                        noise_floor=60.0, use_median=True, use_savgol=True)
                 if got:
                     self.ok += 1
                 else:
@@ -183,9 +201,12 @@ class App:
 
         parts = []
         for k in range(4):
-            v = self.data[k]
-            if v:
-                parts.append("%s 峰%4d" % (EDGES[k][0], max(v)))
+            pr = self.proc[k]
+            if pr and pr["valid"]:
+                s_ = "峰%4d" % int(pr["peak"])
+                if pr["mu"] is not None:
+                    s_ += " 位%.1f" % (pr["mu"] + 1)
+                parts.append("%s %s" % (EDGES[k][0], s_))
             else:
                 parts.append("%s --" % EDGES[k][0])
         self.lb.config(text="　　".join(parts) + "　　　OK %d / BAD %d" % (self.ok, self.bad))
@@ -193,8 +214,9 @@ class App:
     def draw_strip(self, c, k, y):
         tag, cn, rng, direc, i0, i1, rev, col = EDGES[k]
         labels = edge_silk(k)
-        vals = self.data[k] or []
         n = len(labels)
+        pr = self.proc[k]
+        raw = self.data[k] or []
 
         c.create_rectangle(X0 - 10, y, X0 + XW + 10, y + STRIP_H,
                            fill=CARD, outline="#1a2431")
@@ -202,80 +224,104 @@ class App:
         c.create_text(X0, y + 12, anchor="w", text=tag,
                       fill=col, font=("Microsoft YaHei", 15, "bold"))
         c.create_text(X0 + 46, y + 14, anchor="w",
-                      text="%s　%s　(%s)　共 %d 颗" % (cn, rng, direc, n),
+                      text="%s  %s  (%s)  %d 颗" % (cn, rng, direc, n),
                       fill=TXT, font=("Microsoft YaHei", 10))
 
-        mx = max(vals) if vals else 0
-        c.create_text(X0 + XW, y + 14, anchor="e",
-                      text=("峰值 %d" % mx) if mx else "无数据",
-                      fill=col if mx >= NOISE else ("#ff4d5e" if n else DIM),
-                      font=("Consolas", 11, "bold"))
+        # 右上角指标
+        if pr and pr["valid"]:
+            pos = pr["mu"]
+            info = "峰 %d" % int(pr["peak"])
+            if pos is not None:
+                info += "  位置 %.2f" % (pos + 1)
+            if pr["sigma"]:
+                info += "  σ %.2f" % pr["sigma"]
+            c.create_text(X0 + XW, y + 14, anchor="e", text=info,
+                          fill=col, font=("Consolas", 10, "bold"))
+        else:
+            c.create_text(X0 + XW, y + 14, anchor="e", text="无信号",
+                          fill="#ff4d5e" if n else DIM,
+                          font=("Consolas", 10, "bold"))
 
-        # ---- 波形区 ----
-        gx = X0 + 60
-        gw = XW - 80
+        gx = X0 + 62
+        gw = XW - 84
         gy = y + 36
-        gh = 108
+        gh = 104
         gb = gy + gh
 
-        # 刻度与网格
+        # ---- 自动缩放：以处理后的最大值为上限，留 20% 余量 ----
+        if pr and pr["valid"]:
+            data = pr["corr"] if not self.show_raw else [float(x) for x in raw]
+            vmax = max(data) if data else 1.0
+        else:
+            data = [float(x) for x in raw] if raw else [0.0]
+            vmax = max(data) if data else 1.0
+        if vmax < 120.0:
+            vmax = 120.0
+        vmax *= 1.2
+
+        # 网格 + 刻度（用自动缩放后的刻度）
         for f in (0.0, 0.25, 0.5, 0.75, 1.0):
             yy = gb - gh * f
             c.create_line(gx, yy, gx + gw, yy,
                           fill="#22303e" if f in (0, 1) else "#161f2a")
-            c.create_text(gx - 8, yy, anchor="e", text="%d" % int(FULL * f),
+            c.create_text(gx - 8, yy, anchor="e", text="%d" % int(vmax * f),
                           fill="#3d4d5e", font=("Consolas", 7))
 
-        # 阈值线
-        ty = gb - gh * (NOISE / FULL)
-        c.create_line(gx, ty, gx + gw, ty, fill="#3a2a2a", dash=(3, 4))
+        step = gw / max(n - 1, 1)
 
-        if not vals:
+        # ---- 原始曲线（暗色背景，仅处理模式时显示）----
+        if not self.show_raw and raw:
+            pts = []
+            for i in range(min(n, len(raw))):
+                px = gx + i * step
+                py = gb - min(gh, (float(raw[i]) / vmax) * gh)
+                pts.extend([px, py])
+            if len(pts) >= 4:
+                c.create_line(*pts, fill="#2a3a4a", width=1)
+
+        # ---- 主曲线 ----
+        if not raw:
             c.create_text(gx + gw / 2, gy + gh / 2, text="无数据",
                           fill="#3d4d5e", font=("Microsoft YaHei", 13))
         else:
-            step = gw / max(n - 1, 1)
             pts = []
-            for i in range(n):
-                v = vals[i] if i < len(vals) else 0
+            for i in range(min(n, len(data))):
                 px = gx + i * step
-                py = gb - min(gh, (v / FULL) * gh)
+                py = gb - min(gh, (float(data[i]) / vmax) * gh)
                 pts.extend([px, py])
-            # 填充 + 折线
-            if n >= 2:
-                c.create_line(*(pts + [gx + (n - 1) * step, gb, gx, gb]),
-                              fill="#0e1a24", width=0)
+            if len(pts) >= 4:
                 c.create_line(*pts, fill=col, width=2)
-            for i in range(n):
-                v = vals[i] if i < len(vals) else 0
-                px = gx + i * step
-                py = gb - min(gh, (v / FULL) * gh)
-                if v >= NOISE:
-                    c.create_oval(px - 3, py - 3, px + 3, py + 3,
+                for i in range(0, len(pts) // 2, 2):
+                    pass
+            # 数据点
+            for i in range(min(n, len(data))):
+                if float(data[i]) > vmax * 0.12:
+                    px = gx + i * step
+                    py = gb - min(gh, (float(data[i]) / vmax) * gh)
+                    c.create_oval(px - 2.5, py - 2.5, px + 2.5, py + 2.5,
                                   fill=col, outline="")
-                if v and v >= NOISE:
-                    c.create_text(px, py - 7, text=str(v), angle=90,
-                                  anchor="s", fill=col,
-                                  font=("Consolas", 6))
-            # 峰值标记
-            if mx >= NOISE:
-                ki = vals.index(mx)
-                kx = gx + ki * step
-                ky = gb - min(gh, (mx / FULL) * gh)
-                c.create_line(kx, ky, kx, gb, fill=col, dash=(2, 4))
-                c.create_polygon(kx - 4, ky - 12, kx + 4, ky - 12, kx, ky - 4,
-                                 fill=col, outline="")
 
-        # 丝印
-        if n >= 1:
-            step = gw / max(n - 1, 1)
-            for i in range(n):
-                px = gx + i * step
-                c.create_text(px, gb + 5, text=labels[i], angle=90,
-                              anchor="n", fill="#4e5f72",
-                              font=("Consolas", 6))
+        # ---- 阈值线 ----
+        if pr and pr["valid"]:
+            thr = pr["peak"] * 0.25
+            ty = gb - min(gh, (thr / vmax) * gh)
+            c.create_line(gx, ty, gx + gw, ty, fill="#5a3a3a", dash=(3, 5))
 
-        # 方向
+        # ---- 重心/拟合位置标记 ----
+        if pr and pr["valid"] and pr["mu"] is not None:
+            mx_ = gx + pr["mu"] * step
+            c.create_line(mx_, gy - 4, mx_, gb, fill="#ff5566", width=2)
+            c.create_polygon(mx_ - 4, gy - 12, mx_ + 4, gy - 12, mx_, gy - 4,
+                             fill="#ff5566", outline="")
+
+        # ---- 丝印 ----
+        for i in range(n):
+            px = gx + i * step
+            c.create_text(px, gb + 5, text=labels[i], angle=90,
+                          anchor="n", fill="#4e5f72",
+                          font=("Consolas", 6))
+
+        # ---- 首尾与方向 ----
         ay = y + STRIP_H - 14
         c.create_text(X0 + 12, ay, anchor="w", text=labels[0],
                       fill=col, font=("Consolas", 8, "bold"))
@@ -283,6 +329,7 @@ class App:
                       fill=col, font=("Consolas", 8, "bold"))
         c.create_text(X0 + XW / 2, ay, anchor="center", text=direc,
                       fill=DIM, font=("Microsoft YaHei", 8))
+
 
 def main():
     port = sys.argv[1] if len(sys.argv) > 1 else "COM5"
