@@ -29,7 +29,7 @@ static const en_t k_en_b[ADC64_ROWS] = {
 };
 /* 板 C 的行选（FPC13 pin6-9 -> EN13..EN16 = PG3/PG2/PD15/PD14） */
 static const en_t k_en_c[ADC64_ROWS] = {
-    { GPIOG,  3U }, { GPIOG,  2U }, { GPIOD, 15U }, { 0, 0U }   /* PD14 让给舵机 PWM */
+    { GPIOG,  3U }, { GPIOG,  2U }, { GPIOD, 15U }, { GPIOD, 14U }
 };
 
 /* 板 D 的行选（FPC14 pin6-9 -> EN09..EN12 = PG7/PG6/PG5/PG4） */
@@ -77,8 +77,8 @@ uint8_t adc64_get_en_hold(void)    { return s_en_hold; }
 static void cs_low(uint8_t b)  { k_cs[b].port->BSRR = (uint32_t)(1UL << (k_cs[b].pin + 16U)); }
 static void cs_high(uint8_t b) { k_cs[b].port->BSRR = (uint32_t)(1UL << k_cs[b].pin); }
 
-static void en_low(const en_t *e)  { if (e->port == 0) { return; } e->port->BSRR = (uint32_t)(1UL << (e->pin + 16U)); }
-static void en_high(const en_t *e) { if (e->port == 0) { return; } e->port->BSRR = (uint32_t)(1UL << e->pin); }
+static void en_low(const en_t *e)  { e->port->BSRR = (uint32_t)(1UL << (e->pin + 16U)); }
+static void en_high(const en_t *e) { e->port->BSRR = (uint32_t)(1UL << e->pin); }
 
 static void en_off_all(void)
 {
@@ -131,8 +131,6 @@ static void en_gpio_cfg(const en_t *e)
 {
     uint32_t pos = (uint32_t)e->pin * 2U;
 
-
-    if (e->port == 0) { return; }
     e->port->MODER   = (e->port->MODER & ~(3UL << pos)) | (1UL << pos);
     e->port->OTYPER &= ~(1UL << e->pin);
     e->port->OSPEEDR = (e->port->OSPEEDR & ~(3UL << pos)) | (2UL << pos);
@@ -892,46 +890,4 @@ void adc64_read_raw_board(uint8_t which, uint16_t *out64)
             for (k = 0U; k < 16U; k++) { out64[r * 16U + k] = fr.cell[which][r][k]; }
         }
     }
-}
-/* 快速 X 定位：只扫板 C（上长边，信号最干净），返回重心索引×10 和峰值
- * 用于实时跟随，单次扫描约 400~500 ms
- * 返回 1 = 有效，0 = 无信号
- */
-uint8_t adc64_fast_x(uint16_t *pos10, uint16_t *peak, uint32_t *total)
-{
-    static adc64_frame_t fr;
-    uint8_t  i;
-    uint32_t mx = 0U;
-    uint32_t s0 = 0U;
-    uint32_t s1 = 0U;
-    uint32_t thr;
-    uint16_t v;
-
-    /* 用板 A（下长边 E0，43 颗完整覆盖，不受 PD14 影响）测 X */
-    adc64_set_en_hold(0U);
-    adc64_scan(&fr);
-
-    /* E0 索引范围 21~63（D25 -> D4F，左 -> 右） */
-    for (i = 21U; i <= 63U; i++) {
-        v = fr.cell[0][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
-        if ((uint32_t)v > mx) { mx = (uint32_t)v; }
-    }
-    if (mx < 300U) { *peak = (uint16_t)mx; *total = 0U; return 0U; }
-
-    thr = mx * 30U / 100U;
-    if (thr < 250U) { thr = 250U; }
-
-    for (i = 21U; i <= 63U; i++) {
-        v = fr.cell[0][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
-        if ((uint32_t)v >= thr) {
-            s0 += (uint32_t)v;
-            s1 += (uint32_t)v * (uint32_t)i;
-        }
-    }
-    if (s0 == 0U) { *peak = (uint16_t)mx; *total = 0U; return 0U; }
-
-    *peak  = (uint16_t)mx;
-    *total = s0;
-    *pos10 = (uint16_t)((s1 * 10U) / s0);
-    return 1U;
 }

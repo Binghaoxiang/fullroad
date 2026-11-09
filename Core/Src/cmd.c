@@ -1783,33 +1783,26 @@ static void do_track(char *arg)
             uart_puts("\r\n");
         }
         return;
-    }    if (eqi(tok, "X") != 0U) {
-        /* 快速 X 定位（只扫上长边），用于实时跟随 */
-        uint16_t pos10 = 0U;
-        uint16_t pk = 0U;
-        uint32_t tot = 0U;
-        uint8_t okx = adc64_fast_x(&pos10, &pk, &tot);
-        uart_puts("X ");
-        uart_put_u32((uint32_t)okx);
-        uart_putc(' ');
-        uart_put_u32((uint32_t)pos10);
-        uart_putc(' ');
-        uart_put_u32((uint32_t)pk);
-        uart_putc(' ');
-        uart_put_u32(tot);
+    }    if (eqi(tok, "REG") != 0U) {
+        /* 读 GPIO 配置寄存器，确认板 C/D 的 EN 与 CS 是否真的配成了输出 */
+        uart_puts("GPIOC MODER="); uart_put_u32(GPIOC->MODER);
+        uart_puts(" ODR13=");      uart_put_u32((GPIOC->ODR >> 13) & 1U);
         uart_puts("\r\n");
-        return;
-    }    if (eqi(tok, "D") != 0U) {
-        static uint16_t dd[64];
-        uint8_t r, kk;
-        adc64_read_raw_board(3U, dd);
-        for (r = 0U; r < 4U; r++) {
-            uart_puts("DROW"); uart_put_u32((uint32_t)r); uart_puts(":");
-            for (kk = 0U; kk < 16U; kk++) {
-                uart_putc(' '); uart_put_u32((uint32_t)dd[r*16U+kk]);
-            }
-            uart_puts("\r\n");
-        }
+        uart_puts("GPIOD MODER="); uart_put_u32(GPIOD->MODER);
+        uart_puts(" ODR14=");      uart_put_u32((GPIOD->ODR >> 14) & 1U);
+        uart_puts(" ODR15=");      uart_put_u32((GPIOD->ODR >> 15) & 1U);
+        uart_puts("\r\n");
+        uart_puts("GPIOG MODER="); uart_put_u32(GPIOG->MODER);
+        uart_puts(" ODR2=");       uart_put_u32((GPIOG->ODR >> 2) & 1U);
+        uart_puts(" ODR3=");       uart_put_u32((GPIOG->ODR >> 3) & 1U);
+        uart_puts(" ODR4-7=");     uart_put_u32((GPIOG->ODR >> 4) & 0x0FU);
+        uart_puts("\r\n");
+        uart_puts("GPIOI MODER="); uart_put_u32(GPIOI->MODER);
+        uart_puts(" ODR8=");       uart_put_u32((GPIOI->ODR >> 8) & 1U);
+        uart_puts(" ODR9=");       uart_put_u32((GPIOI->ODR >> 9) & 1U);
+        uart_puts("\r\n");
+        uart_puts("AHB1ENR=");     uart_put_u32(RCC->AHB1ENR);
+        uart_puts("\r\n");
         return;
     }    if (eqi(tok, "POS") != 0U) {
         static adc64_frame_t fr;
