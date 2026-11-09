@@ -82,7 +82,7 @@ extern "C" {
 #define SERVO_TIM_APB1EN            RCC_APB1ENR_TIM4EN
 #define SERVO_GPIO                  GPIOD
 #define SERVO_GPIO_AHB1EN           RCC_AHB1ENR_GPIODEN
-#define SERVO_PIN                   14U
+#define SERVO_PIN                   0U           /* PD0 = H5 pin 8 */
 #define SERVO_PIN_AF                2U           /* AF2 = TIM4_CH3 */
 #define SERVO_CCR                   CCR3
 #define SERVO_PWM_PERIOD_US         20000UL       /* 50Hz，舵机标准刷新率 */

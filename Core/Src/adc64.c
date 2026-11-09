@@ -127,6 +127,20 @@ static void en_on(uint8_t row)
     }
 }
 
+
+/* 统一强化一组 EN 引脚的驱动特性，避免不同板之间因 GPIO 配置差异造成信号不均 */
+static void en_force_cfg(const en_t *e)
+{
+    uint32_t pos;
+
+    if (e->port == 0) { return; }
+    pos = (uint32_t)e->pin * 2U;
+    e->port->MODER   = (e->port->MODER & ~(3UL << pos)) | (1UL << pos);
+    e->port->OTYPER &= ~(1UL << e->pin);
+    e->port->OSPEEDR = (e->port->OSPEEDR & ~(3UL << pos)) | (2UL << pos);
+    e->port->PUPDR  &= ~(3UL << pos);
+    e->port->BSRR    = (uint32_t)(1UL << (e->pin + 16U));
+}
 static void en_gpio_cfg(const en_t *e)
 {
     uint32_t pos = (uint32_t)e->pin * 2U;
@@ -196,6 +210,12 @@ void adc64_init(void)
         GPIOH->OTYPER &= ~((1UL << 10) | (1UL << 11));
         GPIOH->OSPEEDR |= ((2UL << 20) | (2UL << 22));
         GPIOH->PUPDR  &= ~((3UL << 20) | (3UL << 22));
+
+    /* 板 C / 板 D 的 EN 也做同样的强化，保证四块板驱动能力一致 */
+    for (i = 0U; i < ADC64_ROWS; i++) {
+        en_force_cfg(&k_en_c[i]);
+        en_force_cfg(&k_en_d[i]);
+    }
     }
 
     en_off_all();
@@ -288,6 +308,7 @@ void adc64_scan(adc64_frame_t *f)
             board_delay_us(ADC64_EN_SETTLE_US);
             /* 预扫一轮（丢弃），让模拟通路稳定 */
             read_bank(0U, dummy);
+            read_bank(1U, dummy);      /* bank 1 也预扫，消除两板的建立时间差异 */
         }
 
         for (b = 0U; b < ADC64_BOARD_COUNT; b++) {

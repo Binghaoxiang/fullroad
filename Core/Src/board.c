@@ -237,60 +237,11 @@ void board_gpio_af_config(GPIO_TypeDef *GPIOx, uint32_t pin, uint32_t af, uint32
  *  PSC 由实际定时器时钟算出，因此即�?HSE 失败退�?HSI，输出依然是精确�?
  *  50Hz / 1us，不会影响舵机定位�?
  *----------------------------------------------------------------------------*/
-void board_servo_pwm_init(uint16_t initial_pulse_us)
-{
-    uint32_t timclk;
-    uint32_t psc;
+/* board_servo_pwm_init: 见下方软件 PWM 实现 */
 
-    /* 时钟 */
-    RCC->AHB1ENR |= SERVO_GPIO_AHB1EN;
-#ifdef SERVO_TIM_APB2EN
-    RCC->APB2ENR |= SERVO_TIM_APB2EN;
-#else
-    RCC->APB1ENR |= SERVO_TIM_APB1EN;
-#endif
-    (void)RCC->AHB1ENR;            /* 读回，确保外设时钟已生效再访问寄存器 */
-    (void)RCC->APB1ENR;
-    (void)RCC->APB2ENR;
+/* board_servo_pwm_set_pulse: 见下方软件 PWM 实现 */
 
-    /* PD12 -> AF2(TIM4_CH1) */
-    board_gpio_af_config(SERVO_GPIO, SERVO_PIN, SERVO_PIN_AF, 1U);
-
-    /* 计数时钟做成 1MHz，即 1 个计�?= 1us */
-    timclk = board_timer_clk_hz(SERVO_TIM);
-    psc    = (timclk + (500000UL * SERVO_PWM_TICKS_PER_US)) / (1000000UL * SERVO_PWM_TICKS_PER_US);
-    if (psc == 0U) {
-        psc = 1U;
-    }
-
-    SERVO_TIM->CR1   = 0U;                                     /* 先停住再配置 */
-    SERVO_TIM->PSC   = (uint16_t)(psc - 1U);
-    /* ARR�?0000us * 2 = 39999 -> 周期精确 20.000ms / 50Hz */
-    SERVO_TIM->ARR   = (uint16_t)((SERVO_PWM_PERIOD_US * SERVO_PWM_TICKS_PER_US) - 1UL);
-    /* CH1 = PWM1 模式，使�?CCR 预装载（�?CCR 在下一个更新事件生效，不会切出畸形波形�?*/
-    /* CH3 = PWM1 模式：OC3M 在 CCMR2 的 bit4~6，OC3PE = bit3 */
-    SERVO_TIM->CCMR2 = (uint16_t)((6U << 4) | TIM_CCMR2_OC3PE);
-    SERVO_TIM->SERVO_CCR = (uint32_t)initial_pulse_us * SERVO_PWM_TICKS_PER_US;
-    SERVO_TIM->CCER  = 0U;                                     /* 先不输出，等 servo_enable */
-    SERVO_TIM->EGR   = TIM_EGR_UG;                             /* 立即装载 PSC/ARR */
-    SERVO_TIM->SR    = 0U;
-    SERVO_TIM->CR1   = TIM_CR1_ARPE | TIM_CR1_CEN;             /* 开计数�?*/
-}
-
-void board_servo_pwm_set_pulse(uint16_t pulse_us)
-{
-    /* 命令层始终用 us，这里换算成计数器刻度（TICKS_PER_US=2 �?0.5us 精度�?*/
-    SERVO_TIM->SERVO_CCR = (uint32_t)pulse_us * SERVO_PWM_TICKS_PER_US;
-}
-
-void board_servo_pwm_enable(uint8_t enable)
-{
-    if (enable != 0U) {
-        SERVO_TIM->CCER |= TIM_CCER_CC3E;
-    } else {
-        SERVO_TIM->CCER &= ~TIM_CCER_CC3E;
-    }
-}
+/* board_servo_pwm_enable: 见下方软件 PWM 实现 */
 
 /*----------------------------------------------------------------------------
  * 探测�?ADC：ADC1，软件触发单次转换，12bit
@@ -396,3 +347,93 @@ uint16_t board_spi_transfer16(uint16_t tx)
 
     return rx;
 }
+
+/*----------------------------------------------------------------------------
+ * 舵机软件 PWM（TIM2 时基 + GPIO 直接翻转）
+ * 这样任何 GPIO 都能输出 50Hz 舵机脉冲，不依赖引脚的定时器复用功能
+ *--------------------------------------------------------------------------*/
+#define SWPWM_TIM        TIM2
+#define SWPWM_APB1EN     RCC_APB1ENR_TIM2EN
+#define SWPWM_PERIOD_US  20000U      /* 20ms = 50Hz */
+#define SWPWM_PULSE_MIN  1000U
+#define SWPWM_PULSE_MAX  2000U
+
+static volatile uint16_t s_sw_pulse_us = 1500U;
+static volatile uint8_t  s_sw_enabled  = 0U;
+
+void TIM2_IRQHandler(void)
+{
+    /* 周期起点：引脚拉高，并设定本次脉宽 */
+    if ((SWPWM_TIM->SR & TIM_SR_UIF) != 0U) {
+        SWPWM_TIM->SR = ~TIM_SR_UIF;
+        if (s_sw_enabled != 0U) {
+            SERVO_GPIO->BSRR = (uint32_t)(1UL << SERVO_PIN);
+            SWPWM_TIM->CCR1  = (uint32_t)s_sw_pulse_us;
+        }
+    }
+    /* 脉宽到时：引脚拉低 */
+    if ((SWPWM_TIM->SR & TIM_SR_CC1IF) != 0U) {
+        SWPWM_TIM->SR = ~TIM_SR_CC1IF;
+        SERVO_GPIO->BSRR = (uint32_t)(1UL << (SERVO_PIN + 16U));
+    }
+}
+
+void board_servo_pwm_init(uint16_t initial_pulse_us)
+{
+    uint32_t timclk;
+    uint32_t psc;
+
+    if (initial_pulse_us < SWPWM_PULSE_MIN) { initial_pulse_us = SWPWM_PULSE_MIN; }
+    if (initial_pulse_us > SWPWM_PULSE_MAX) { initial_pulse_us = SWPWM_PULSE_MAX; }
+    s_sw_pulse_us = initial_pulse_us;
+    s_sw_enabled  = 0U;
+
+    /* --- GPIO：推挽输出，先拉低 --- */
+    RCC->AHB1ENR |= SERVO_GPIO_AHB1EN;
+    (void)RCC->AHB1ENR;
+    SERVO_GPIO->MODER   = (SERVO_GPIO->MODER & ~(3UL << (SERVO_PIN * 2U)))
+                        | (1UL << (SERVO_PIN * 2U));          /* 输出 */
+    SERVO_GPIO->OTYPER &= ~(1UL << SERVO_PIN);                 /* 推挽 */
+    SERVO_GPIO->OSPEEDR = (SERVO_GPIO->OSPEEDR & ~(3UL << (SERVO_PIN * 2U)))
+                        | (2UL << (SERVO_PIN * 2U));          /* 高速 */
+    SERVO_GPIO->BSRR    = (uint32_t)(1UL << (SERVO_PIN + 16U));/* 拉低 */
+
+    /* --- TIM2：1MHz 计数 --- */
+    RCC->APB1ENR |= SWPWM_APB1EN;
+    (void)RCC->APB1ENR;
+
+    timclk = board_timer_clk_hz(SWPWM_TIM);
+    psc = (timclk + 500000UL) / 1000000UL;      /* 让计数时钟 ≈ 1MHz */
+    if (psc == 0U) { psc = 1U; }
+
+    SWPWM_TIM->CR1   = 0U;
+    SWPWM_TIM->PSC   = (uint16_t)(psc - 1U);
+    SWPWM_TIM->ARR   = SWPWM_PERIOD_US - 1U;
+    SWPWM_TIM->CCR1  = initial_pulse_us;
+    SWPWM_TIM->CCMR1 = 0U;                       /* 纯比较，不接引脚 */
+    SWPWM_TIM->EGR   = TIM_EGR_UG;
+    SWPWM_TIM->SR    = 0U;
+    SWPWM_TIM->DIER  = TIM_DIER_UIE | TIM_DIER_CC1IE;
+    SWPWM_TIM->CR1   = TIM_CR1_CEN;
+
+    NVIC_SetPriority(TIM2_IRQn, 1U);
+    NVIC_EnableIRQ(TIM2_IRQn);
+}
+
+void board_servo_pwm_set_pulse(uint16_t pulse_us)
+{
+    if (pulse_us < SWPWM_PULSE_MIN) { pulse_us = SWPWM_PULSE_MIN; }
+    if (pulse_us > SWPWM_PULSE_MAX) { pulse_us = SWPWM_PULSE_MAX; }
+    s_sw_pulse_us = pulse_us;
+}
+
+void board_servo_pwm_enable(uint8_t enable)
+{
+    if (enable != 0U) {
+        s_sw_enabled = 1U;
+    } else {
+        s_sw_enabled = 0U;
+        SERVO_GPIO->BSRR = (uint32_t)(1UL << (SERVO_PIN + 16U));
+    }
+}
+

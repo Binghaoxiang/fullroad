@@ -91,8 +91,8 @@ class ScreenLocator:
         self.H = float(height_mm)
         self.min_total = float(min_total)
         self.cscale = float(consistency_scale)
-        self.min_peak = 500.0      # 绝对峰值门限，低于此值的边丢弃
-        self.rel_peak = 0.25       # 相对最佳边的峰值门限
+        self.min_peak = 120.0      # 绝对峰值门限（已放宽，弱信号靠 SNR 判据）
+        self.rel_peak = 0.001      # 相对门限已基本禁用，改用 SNR 判据
 
     # ---------------- 单边 → 物理坐标 ----------------
     def _edge_to_mm(self, e, pos_index, count, total):

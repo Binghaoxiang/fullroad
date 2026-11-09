@@ -72,6 +72,54 @@ def moving_avg(a, w=3):
     return out
 
 
+
+
+# ============================================================ 自适应噪声估计
+def estimate_noise(v, low_ratio=0.40):
+    """从数据本身估计噪声底噪和噪声标准差
+
+    做法：取最低 low_ratio 比例的点作为"无光区"，
+         用它们的中位数作底噪，用 MAD 作噪声尺度。
+
+    返回 (noise_floor, sigma)
+        sigma = 1.4826 * MAD  （MAD 到标准差的换算系数）
+    """
+    n = len(v)
+    if n < 4:
+        return 0.0, 1.0
+    srt = sorted(float(x) for x in v)
+    k = max(2, int(n * low_ratio))
+    low = srt[:k]
+    med = low[len(low) // 2]
+    devs = sorted(abs(x - med) for x in low)
+    mad = devs[len(devs) // 2]
+    sigma = 1.4826 * mad
+    if sigma < 1.0:
+        sigma = 1.0
+    return med, sigma
+
+
+def adaptive_threshold(peak, noise, sigma, snr):
+    """按 SNR 自适应的阈值
+
+    强信号（SNR 高）：用较高的相对阈值，只保留主瓣，重心更准
+    弱信号（SNR 低）：用较低的阈值，保住主瓣，避免重心被噪声拖走
+    """
+    if peak <= noise:
+        return peak
+    if snr >= 20.0:
+        k = 0.30
+    elif snr >= 10.0:
+        k = 0.22
+    elif snr >= 5.0:
+        k = 0.15
+    else:
+        k = 0.10
+    thr_a = peak * k                      # 相对阈值
+    thr_b = noise + 3.0 * sigma           # 绝对阈值（噪声的 3σ）
+    return max(thr_a, thr_b)
+
+
 # ============================================================ 基线跟踪
 class Baseline:
     """自适应暗电流基线
@@ -248,49 +296,82 @@ class Tracker:
 # ============================================================ 完整处理
 def process_edge(raw, baseline=None, thr_ratio=0.25, noise_floor=60.0,
                  use_median=True, use_savgol=True):
-    """完整处理一条边的原始数组
+    """自适应处理一条边的原始数组
 
-    raw        原始 ADC 列表
-    baseline   Baseline 实例（可选，传入则做暗电流扣除）
-    thr_ratio  重心阈值（相对峰值）
-    noise_floor 绝对噪声门限
+    与旧版的区别：
+      · 噪声底噪和标准差从数据本身估计，不用固定常数
+      · 阈值按 SNR 自适应
+      · 平滑强度按 SNR 自适应（弱信号多平滑一遍）
+      · 输出 snr，供上层做融合加权
     """
     n = len(raw)
     a = [float(x) for x in raw]
+    if n == 0:
+        return {"raw": raw, "corr": [], "peak": 0.0, "floor": 0.0,
+                "valid": False, "pos": None, "total": 0.0, "count": 0,
+                "fit": None, "mu": None, "sigma": None, "snr": 0.0}
 
-    # ① 基线校正
+    # ---- ① 从原始数据估噪声 ----
+    nf, sigma = estimate_noise(a)
+
+    # ---- ② 基线校正 ----
     if baseline is not None:
         baseline.update(raw)
         corr = baseline.subtract(raw)
     else:
-        corr = list(a)
+        corr = [max(0.0, x - nf) for x in a]
 
-    # ② 中值
+    # ---- ③ 中值滤波 ----
     if use_median:
         corr = median3(corr)
 
-    # ③ Savitzky-Golay 平滑
+    # ---- ④ 自适应平滑 ----
+    peak0 = max(corr) if corr else 0.0
+    snr0 = (peak0 - nf) / sigma if sigma > 0 else 0.0
     if use_savgol:
         corr = savgol5(corr)
+        if snr0 < 6.0:            # 弱信号再平滑一遍
+            corr = savgol5(corr)
 
-    # ④ 峰值与噪声门限
+    # ---- ⑤ 峰值与自适应阈值 ----
     mx = max(corr) if corr else 0.0
-    floor = max(noise_floor, (min(corr) if corr else 0.0))
-    valid = mx > floor
+    snr = (mx - nf) / sigma if sigma > 0 else 0.0
+    if snr < 0.0:
+        snr = 0.0
+    thr = adaptive_threshold(mx, nf, sigma, snr)
 
-    # ⑤ 重心
-    pos, peak, total, cnt = centroid(corr, thr_ratio, floor)
+    # 有效判据：峰值必须明显高于噪声（3σ 以上）且绝对幅值够
+    valid = (mx > nf + 3.0 * sigma) and (mx > noise_floor * 0.5)
 
-    # ⑥ 高斯拟合
+    # ---- ⑥ 重心（用自适应阈值）----
+    s0 = 0.0
+    s1 = 0.0
+    cnt = 0
+    for i in range(n):
+        if corr[i] >= thr:
+            s0 += corr[i]
+            s1 += corr[i] * i
+            cnt += 1
+    if s0 > 0.0:
+        pos = s1 / s0
+        total = s0
+    else:
+        pos = None
+        total = 0.0
+
+    # ---- ⑦ 高斯拟合 ----
     fit = None
     if valid and n >= 5:
-        fit = gaussian_fit(corr, thr_ratio * 0.6)
+        fit = gaussian_fit(corr, max(0.10, thr_ratio * 0.6))
 
     return {
         "raw": raw,
         "corr": corr,
-        "peak": peak,
-        "floor": floor,
+        "peak": mx,
+        "floor": nf,
+        "sigma_noise": sigma,
+        "snr": snr,
+        "thr": thr,
         "valid": valid,
         "pos": pos,
         "total": total,

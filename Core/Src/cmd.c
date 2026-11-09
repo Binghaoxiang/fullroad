@@ -474,6 +474,12 @@ static void do_version(void)
     uart_puts(" I=");       uart_put_u32(GPIOI->MODER);  uart_puts("\r\n");
     uart_puts("REG ENR=");  uart_put_u32(RCC->AHB1ENR);  uart_puts("\r\n");
     uart_puts("REG ODR C="); uart_put_u32((GPIOC->ODR >> 13) & 1U);
+    uart_puts("T4R CR1=");   uart_put_u32(TIM4->CR1);
+    uart_puts(" CCER=");     uart_put_u32(TIM4->CCER);
+    uart_puts(" PSC=");      uart_put_u32(TIM4->PSC);
+    uart_puts(" ARR=");      uart_put_u32(TIM4->ARR);
+    uart_puts(" CCR3=");     uart_put_u32(TIM4->CCR3);
+    uart_puts(" CCMR2=");    uart_put_u32(TIM4->CCMR2); uart_puts("\r\n");
     uart_puts(" G=");        uart_put_u32(GPIOG->ODR & 0xF0U);
     uart_puts(" D=");        uart_put_u32((GPIOD->ODR >> 14) & 3U); uart_puts("\r\n");
 }

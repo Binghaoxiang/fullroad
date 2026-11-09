@@ -127,13 +127,19 @@ class App:
         # ---- 跟随控制 ----
 
         self.tracking = False
-        self.servo_deg = 90.0   # 上电中位 = 屏幕中心
+        self.servo_deg = 90.0   # 中位（可向两侧各调 ±85 度）
 
-        self.dir_sign = None          # 舵机方向与 X 的关系，校准后确定
-        self.db_mm = 2.0        # 死区 mm
-        self.kp = 0.06          # PID: 每 mm 误差对应多少度
-        self.ki = 0.008         # 积分项
-        self.kd = 0.02          # 微分项
+        self.dir_sign = 1.0
+        self.kp_ms = 7.0        # 每 mm 误差 → 多少毫秒转动
+        self.min_ms = 100.0      # 最短转动
+        self.max_ms = 400.0     # 最长转动
+        self.dev_us = 500.0     # 脉宽偏离量（越大转越快）
+        self.last_moved = False
+        self.worse_count = 0
+        self.db_mm = 3.0        # 死区
+        self.kp = 0.50          # 每 mm 误差对应多少度（放大以便可见）
+        self.ki = 0.010
+        self.kd = 0.030
 
         self.last_cmd = 0.0
 
@@ -289,6 +295,9 @@ class App:
             self.stat.config(text="已连接")
             try:
                 self.ser.write(b"K OFF\r\n")
+                time.sleep(0.15)
+                self.ser.write(b"X1\r\n")     # 使能舵机 PWM
+                time.sleep(0.15)
                 time.sleep(0.2)
                 self.ser.reset_input_buffer()
             except Exception:
@@ -431,6 +440,9 @@ class App:
 
                         noise_floor=60.0, use_median=True, use_savgol=True)
 
+                if self.tracking:
+                    self.track_step()
+
                 if got and all(self.proc[k] for k in range(4)):
 
                     self.pos = self.locator.localize(self.proc)
@@ -513,7 +525,7 @@ class App:
 
         if abs(dx) < 1.0:
 
-            self.dir_sign = None
+            self.dir_sign = 1.0
 
             self.stat.config(text="校准失败：X 变化不足（%.1fmm）" % dx)
 
@@ -542,75 +554,93 @@ class App:
         self.last_cmd = time.time()
         self.last_pulse = us
 
-    def track_step(self):
-        """Y 轴单轴 PID 位置控制
+    def e2_x_mm(self):
+        """从上长边 E2 的重心算 X 坐标（mm）
 
-        用两个短边（E1 右 + E3 左）融合出 Y，目标 Y = 50mm（屏幕中心）。
-        误差 -> PID -> 舵机角度增量 -> 发 A 命令。
-        舵机上电 90 度 = 屏幕中心。
+        E2 索引 22~63 逆序（D4F 左 → D35 右），
+        数组位置 0 = 最左 X=0，位置 N-1 = 最右 X=200。
         """
+        pr = self.proc[2] if len(self.proc) > 2 else None
+        if not pr or not pr.get("valid"):
+            return None, 0
+        pos = pr.get("mu")
+        if pos is None:
+            pos = pr.get("pos")
+        if pos is None:
+            return None, 0
+        n = screen_pos.EDGES[2][2]
+        u = pos / float(n - 1)
+        u = max(0.0, min(1.0, u))
+        return u * SCREEN_W_MM, float(pr.get("peak", 0.0))
+
+    def _burst(self, pulse, ms):
+        """X1 -> P<pulse> -> 保持 ms -> X0"""
+        self._send("X1")
+        time.sleep(0.02)
+        self._send("P%d" % int(pulse))
+        t0 = time.time()
+        while (time.time() - t0) * 1000.0 < ms:
+            if not self.tracking:
+                break
+            time.sleep(0.02)
+        self._send("X0")          # 断电停止
+
+    def track_step(self):
+        """E2 单边偏差 -> 方向 + 时长 -> 三段式脉冲驱动"""
         if not self.tracking:
             return
 
-        # ---- 取 Y（只用两个短边）----
-        y = None
-        if self.pos and self.pos.valid:
-            ys = []
-            ws = []
-            if self.pos.y1 is not None:
-                ys.append(self.pos.y1)
-                ws.append(self.pos.wy1)
-            if self.pos.y3 is not None:
-                ys.append(self.pos.y3)
-                ws.append(self.pos.wy3)
-            if ys and sum(ws) > 0:
-                y = sum(a * b for a, b in zip(ys, ws)) / sum(ws)
-            elif ys:
-                y = sum(ys) / len(ys)
-
-        if y is None:
-            self.integral = 0.0
+        x, peak = self.e2_x_mm()
+        if x is None:
+            self._send("X0")
             self.prev_e = None
-            self.stat.config(text="等待 Y 数据（需要短边有信号）")
+            self.stat.config(text="E2 无有效信号，等待…")
             return
 
-        # ---- 误差 ----
-        err = (SCREEN_H_MM / 2.0) - y      # 目标 Y = 50mm
+        err = (SCREEN_W_MM / 2.0) - x
         aerr = abs(err)
 
+        # ---- 死区 ----
         if aerr < self.db_mm:
-            self.integral = 0.0
-            self.prev_e = None
-            self.stat.config(text="已对准  Y=%.1f  err=%+.1f" % (y, err))
+            self._send("X0")
+            self.prev_e = aerr
+            self.worse_count = 0
+            self.last_moved = False
+            self.stat.config(text="已对准  X=%.1f  err=%+.1f  E2峰=%d"
+                                  % (x, err, int(peak)))
             return
 
-        # ---- PID ----
-        self.integral += err * 0.15
-        self.integral = max(-200.0, min(200.0, self.integral))
-        deriv = 0.0 if self.prev_e is None else (err - self.prev_e)
-        self.prev_e = err
+        # ---- 方向自学习 ----
+        if self.prev_e is not None and getattr(self, "last_moved", False):
+            if aerr > self.prev_e + 1.5:
+                self.worse_count = getattr(self, "worse_count", 0) + 1
+                if self.worse_count >= 2:
+                    self.dir_sign = -self.dir_sign
+                    self.worse_count = 0
+                    self.last_moved = False
+                    self.prev_e = aerr
+                    self.stat.config(text="方向翻转 -> %s"
+                                          % ("+" if self.dir_sign > 0 else "-"))
+                    return
+            else:
+                self.worse_count = 0
+        self.prev_e = aerr
+        self.last_moved = False
 
-        u = (self.kp * err) + (self.ki * self.integral) + (self.kd * deriv)
-        u = max(-self.out_max, min(self.out_max, u))
+        # ---- 转动时长（比例） ----
+        ms = self.kp_ms * aerr
+        ms = max(self.min_ms, min(self.max_ms, ms))
 
-        # ---- 方向 + 限幅 ----
-        delta = u * self.dir_sign
-        new_deg = self.servo_deg + delta
-        if new_deg > self.max_deg:
-            new_deg = self.max_deg
-        elif new_deg < self.min_deg:
-            new_deg = self.min_deg
-        delta = new_deg - self.servo_deg
-        if abs(delta) < 0.05:
-            return
+        # ---- 方向：err>0 表示光在左，需要往右推 ----
+        direction = 1.0 if err > 0 else -1.0
+        pulse = 1375 - int(self.dev_us * direction * self.dir_sign)
 
-        self.servo_deg = new_deg
-        self._send("A %.2f" % self.servo_deg)
-        self.last_cmd = time.time()
+        self._burst(pulse, ms)
+        self.last_moved = True
 
         self.stat.config(
-            text="Y轴跟随  Y=%.1f  err=%+.1f  A=%.1f°  dir=%s"
-                 % (y, err, self.servo_deg,
+            text="移动  X=%.1f  err=%+.1f  P=%d  %dms  dir=%s"
+                 % (x, err, pulse, int(ms),
                     "+" if self.dir_sign > 0 else "-"))
 
     def _send(self, cmd):
