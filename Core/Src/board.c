@@ -179,12 +179,15 @@ void board_tick_init(void)
 /* 微秒级忙等：DWT 周期计数，误�?< 1 个主频周�?*/
 void board_delay_us(uint32_t us)
 {
-    uint32_t start;
-    uint32_t ticks = us * (SystemCoreClock / 1000000UL);
+    /* 纯软件循环延时，不依赖 DWT（DWT 在部分调试场景下 CYCCNT 不计数） */
+    volatile uint32_t n;
 
-    start = DWT->CYCCNT;
-    while ((uint32_t)(DWT->CYCCNT - start) < ticks) {
-    }
+    if (us == 0U) { return; }
+    if (us > 500000U) { us = 500000U; }        /* 上限保护 */
+
+    /* 180MHz 下每次循环约 6 个周期 -> 约 30 次/微秒 */
+    n = us * 30U;
+    while (n != 0U) { n--; }
 }
 
 void board_tick_1ms(void)

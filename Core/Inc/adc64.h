@@ -56,6 +56,9 @@ void     adc64_measure(uint16_t *x01, uint16_t *y01, uint16_t *maxl,
                        uint16_t *maxs, uint8_t *valid);
 void     adc64_measure_reset(void);
 uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out);
+void     adc64_diag_delay(uint32_t us);
+uint16_t adc64_diag_spi(void);
+void     adc64_diag_bank(uint16_t *dst);
 uint8_t  adc64_set_cs_pin(uint8_t slot, char port, uint8_t pin);
 uint32_t adc64_probe_cs(GPIO_TypeDef *port, uint8_t pin, uint8_t edge);
 void     adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3,

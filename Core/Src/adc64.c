@@ -778,3 +778,23 @@ uint8_t adc64_set_cs_pin(uint8_t slot, char port, uint8_t pin)
     k_cs[slot].pin  = pin;
     return 1U;
 }
+
+/* ---- 诊断包装（供 K T1~T4 使用）---- */
+void adc64_diag_delay(uint32_t us) { board_delay_us(us); }
+uint16_t adc64_diag_spi(void)
+{
+    uint16_t r;
+    cs_low(0U);
+    board_delay_us(5U);
+    r = board_spi_transfer16(0x1000U);
+    cs_high(0U);
+    return r;
+}
+void adc64_diag_bank(uint16_t *dst)
+{
+    adc64_set_en_hold(0U);
+    en_on(0U);
+    board_delay_us(2000U);
+    read_bank(0U, dst);
+    en_off_all();
+}
