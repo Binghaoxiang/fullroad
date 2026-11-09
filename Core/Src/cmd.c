@@ -1783,6 +1783,34 @@ static void do_track(char *arg)
             uart_puts("\r\n");
         }
         return;
+    }    if (eqi(tok, "X") != 0U) {
+        /* 快速 X 定位（只扫上长边），用于实时跟随 */
+        uint16_t pos10 = 0U;
+        uint16_t pk = 0U;
+        uint32_t tot = 0U;
+        uint8_t okx = adc64_fast_x(&pos10, &pk, &tot);
+        uart_puts("X ");
+        uart_put_u32((uint32_t)okx);
+        uart_putc(' ');
+        uart_put_u32((uint32_t)pos10);
+        uart_putc(' ');
+        uart_put_u32((uint32_t)pk);
+        uart_putc(' ');
+        uart_put_u32(tot);
+        uart_puts("\r\n");
+        return;
+    }    if (eqi(tok, "D") != 0U) {
+        static uint16_t dd[64];
+        uint8_t r, kk;
+        adc64_read_raw_board(3U, dd);
+        for (r = 0U; r < 4U; r++) {
+            uart_puts("DROW"); uart_put_u32((uint32_t)r); uart_puts(":");
+            for (kk = 0U; kk < 16U; kk++) {
+                uart_putc(' '); uart_put_u32((uint32_t)dd[r*16U+kk]);
+            }
+            uart_puts("\r\n");
+        }
+        return;
     }    if (eqi(tok, "POS") != 0U) {
         static adc64_frame_t fr;
         uint8_t r;

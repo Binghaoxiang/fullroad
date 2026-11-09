@@ -91,6 +91,8 @@ class ScreenLocator:
         self.H = float(height_mm)
         self.min_total = float(min_total)
         self.cscale = float(consistency_scale)
+        self.min_peak = 500.0      # 绝对峰值门限，低于此值的边丢弃
+        self.rel_peak = 0.25       # 相对最佳边的峰值门限
 
     # ---------------- 单边 → 物理坐标 ----------------
     def _edge_to_mm(self, e, pos_index, count, total):
@@ -147,7 +149,30 @@ class ScreenLocator:
             if pos is None:
                 pos = d.get("pos")
             mm[e], wt[e] = self._edge_to_mm(e, pos, count, d.get("total", 0.0))
+            # 权重改进：用「峰值 × 集中度²」而非总光强
+            # 集中度 = 峰值/总和，单峰干净波形接近 1，杂乱波形接近 0
+            pk = float(d.get("peak", 0.0))
+            tt = float(d.get("total", 0.0))
+            if pk > 0.0 and mm[e] is not None and tt > 0.0:
+                conc = max(0.0, min(1.0, pk / tt))
+                wt[e] = pk * conc * conc
 
+        # ---- 相对门控：峰值低于最佳边一定比例的直接剔除 ----
+        pks = []
+        for e in range(4):
+            d = edges[e] if e < len(edges) else None
+            if d and d.get("valid"):
+                pks.append(float(d.get("peak", 0.0)))
+            else:
+                pks.append(0.0)
+        best_pk = max(pks) if pks else 0.0
+        if best_pk > 0.0:
+            for e in range(4):
+                if mm[e] is not None and pks[e] < best_pk * self.rel_peak:
+                    mm[e] = None
+                    wt[e] = 0.0
+
+        # ---- 权重重归一化：峰值低于门限的边权重再降一档 ----
         # ---- X 轴：E0 + E2 ----
         num = 0.0
         den = 0.0
