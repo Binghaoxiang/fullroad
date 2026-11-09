@@ -653,42 +653,59 @@ uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out)
 }
 
 /* 一次扫描，提取四条边的全部数据（避免重复扫描） */
+/* 提取一条边到目标缓冲（从 fr.cell[src] 取） */
+static uint8_t edge_extract(const adc64_frame_t *fr, uint8_t src,
+                            uint8_t e, uint16_t *dst)
+{
+    uint8_t  i;
+    uint8_t  i0 = k_edges[e].i0;
+    uint8_t  i1 = k_edges[e].i1;
+    uint16_t c  = 0U;
+
+    if (k_edges[e].rev == 0U) {
+        for (i = i0; i <= i1; i++) {
+            dst[c] = fr->cell[src][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+            c++;
+        }
+    } else {
+        for (i = i1; ; i--) {
+            dst[c] = fr->cell[src][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+            c++;
+            if (i == i0) { break; }
+        }
+    }
+    return (uint8_t)c;
+}
+
 void adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3,
                           uint8_t *n_out)
 {
     static adc64_frame_t fr;
-    uint16_t *dst[2];
-    uint8_t  i;
-    uint8_t  i0;
-    uint8_t  i1;
-    uint8_t  n;
-    uint16_t c;
+    cs_t save;
 
-    dst[0] = b0; dst[1] = b1;
-    (void)b2; (void)b3;
-
+    /* ---- 第一遍：板 A(下长边) + 板 B(右短边) ---- */
     adc64_set_en_hold(0U);
     adc64_scan(&fr);
+    n_out[0] = edge_extract(&fr, 0U, 0U, b0);
+    n_out[1] = edge_extract(&fr, 1U, 1U, b1);
 
-    for (n = 0U; n < 2U; n++) {
-        c = 0U;
-        i0 = k_edges[n].i0; i1 = k_edges[n].i1;
-        if (k_edges[n].rev == 0U) {
-            for (i = i0; i <= i1; i++) {
-                dst[n][c] = fr.cell[n][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
-                c++;
-            }
-        } else {
-            for (i = i1; ; i--) {
-                dst[n][c] = fr.cell[n][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
-                c++;
-                if (i == i0) { break; }
-            }
-        }
-        n_out[n] = (uint8_t)c;
-    }
-    n_out[2] = 0U;
-    n_out[3] = 0U;
+    /* ---- 第二遍：板 C 上长边，片选临时切到 PC13 ---- */
+    save = k_cs[0];
+    k_cs[0].port = ADC64_C_CS_PORT;
+    k_cs[0].pin  = ADC64_C_CS_PIN;
+    k_cs[0].port->BSRR = (1UL << ADC64_C_CS_PIN);      /* 先拉高 */
+    adc64_scan(&fr);
+    k_cs[0] = save;
+    n_out[2] = edge_extract(&fr, 0U, 2U, b2);
+
+    /* ---- 第三遍：板 D 左短边，片选临时切到 PI9 ---- */
+    save = k_cs[0];
+    k_cs[0].port = ADC64_D_CS_PORT;
+    k_cs[0].pin  = ADC64_D_CS_PIN;
+    k_cs[0].port->BSRR = (1UL << ADC64_D_CS_PIN);
+    adc64_scan(&fr);
+    k_cs[0] = save;
+    n_out[3] = edge_extract(&fr, 0U, 3U, b3);
 }
 /*----------------------------------------------------------------------------
  * 临时片选探测：把 k_cs[0] 换成指定的 port/pin，扫一次，取指定边的峰值
