@@ -167,10 +167,10 @@ void adc64_init(void)
     GPIOC->OSPEEDR |= (3UL << 26);
     GPIOC->BSRR = (1UL << 13);
 
-    GPIOC->MODER = (GPIOC->MODER & ~(3UL << 30)) | (1UL << 30);
-    GPIOC->OTYPER &= ~(1UL << 15);
-    GPIOC->OSPEEDR |= (3UL << 30);
-    GPIOC->BSRR = (1UL << 15);
+    GPIOI->MODER = (GPIOI->MODER & ~(3UL << 18)) | (1UL << 18);
+    GPIOI->OTYPER &= ~(1UL << 9);
+    GPIOI->OSPEEDR |= (3UL << 18);
+    GPIOI->BSRR = (1UL << 9);
     GPIOH->BSRR  = (1UL << 4);
 
     /* EN 行选时钟 */
