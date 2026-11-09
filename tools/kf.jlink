@@ -1,5 +1,5 @@
 si 1
-speed 50
+speed 100
 device STM32F429IG
 connect
 erase

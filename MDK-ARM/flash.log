@@ -1,0 +1,17 @@
+Load "Objects\\Severo.axf" 
+* JLink Info: Device "STM32F429IG" selected.
+Set JLink Project File to "C:\Users\a\Desktop\Pro\Laser_communication\Software\Severo\MDK-ARM\JLinkSettings.ini"* JLink Info: Device "STM32F429IG" selected.
+
+JLink info:
+------------
+DLL: V5.10h, compiled Jan 21 2016 19:24:29
+Firmware: J-Link V9 compiled May  7 2021 16:26:12
+Hardware: V9.60
+S/N : 69653836 
+Feature(s) : RDI, GDB, FlashDL, FlashBP, JFlash 
+
+* JLink Info: STM32 (connect): Can not attach to CPU. Trying connect under reset.
+* JLink Info: STM32 (connect): Can not attach to CPU. Trying connect under reset.
+***JLink Error: STM32: Connecting to CPU via connect under reset failed.
+Error: Flash Download failed  -  Target DLL has been cancelled
+Flash Load finished at 10:59:27
