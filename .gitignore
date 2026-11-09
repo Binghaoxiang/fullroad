@@ -32,3 +32,8 @@ __pycache__/
 
 # 备份
 *.bak
+
+# 大文件（不入库）
+_pkg/*.exe
+dist/*.zip
+
