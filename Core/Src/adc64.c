@@ -115,14 +115,14 @@ static void en_on(uint8_t row)
     for (r = 0U; r < ADC64_ROWS; r++) {
         if (r == row) {
             en_high(&k_en_a[r]);
+            en_high(&k_en_b[r]);
             en_high(&k_en_c[r]);
             en_high(&k_en_d[r]);
-            en_high(&k_en_b[r]);
         } else {
-            en_low(&k_en_c[r]);
-            en_low(&k_en_d[r]);
             en_low(&k_en_a[r]);
             en_low(&k_en_b[r]);
+            en_low(&k_en_c[r]);
+            en_low(&k_en_d[r]);
         }
     }
 }
