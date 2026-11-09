@@ -55,7 +55,7 @@ typedef struct
 static const edge_t k_edges[4] = {
     { 21U, 63U, 0U },   /* E0 下长边 D25->D4F  43 颗 */
     { 22U, 39U, 0U },   /* E1 右短边 D35->D49  18 颗 */
-    {  7U, 22U, 0U },   /* E2 上长边 D41->D35  16 颗 */
+    { 22U, 63U, 1U },   /* E2 上长边 D4F->D35  42 颗（逆序） */
     { 22U, 42U, 0U }    /* E3 左短边 D35->D3a  21 颗 */
 };
 
@@ -864,3 +864,30 @@ void k_cs_direct_set(uint8_t b, GPIO_TypeDef *port, uint8_t pin)
     k_cs[b].pin  = pin;
 }
 void k_cs_direct_restore(uint8_t b, cs_t v) { k_cs[b] = v; }
+
+/* 读取指定板的全部 64 通道（0=A 1=B 2=C 3=D），用于诊断 */
+void adc64_read_raw_board(uint8_t which, uint16_t *out64)
+{
+    static adc64_frame_t fr;
+    cs_t save;
+    uint8_t r, k;
+
+    if (which >= 2U) {
+        save = k_cs[0];
+        if (which == 2U) { k_cs[0].port = ADC64_C_CS_PORT; k_cs[0].pin = ADC64_C_CS_PIN; }
+        else             { k_cs[0].port = ADC64_D_CS_PORT; k_cs[0].pin = ADC64_D_CS_PIN; }
+        k_cs[0].port->BSRR = (1UL << k_cs[0].pin);
+        adc64_set_en_hold(0U);
+        adc64_scan(&fr);
+        k_cs[0] = save;
+        for (r = 0U; r < 4U; r++) {
+            for (k = 0U; k < 16U; k++) { out64[r * 16U + k] = fr.cell[0][r][k]; }
+        }
+    } else {
+        adc64_set_en_hold(0U);
+        adc64_scan(&fr);
+        for (r = 0U; r < 4U; r++) {
+            for (k = 0U; k < 16U; k++) { out64[r * 16U + k] = fr.cell[which][r][k]; }
+        }
+    }
+}

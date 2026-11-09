@@ -1762,6 +1762,27 @@ static void do_track(char *arg)
         uart_put_u32(lo);
         uart_puts("\r\n");
         return;
+    }    if (eqi(tok, "T6") != 0U) {
+        static uint16_t d[64];
+        uint8_t r, k;
+        adc64_read_raw_board(2U, d);
+        for (r = 0U; r < 4U; r++) {
+            uart_puts("ROW"); uart_put_u32((uint32_t)r); uart_puts(":");
+            for (k = 0U; k < 16U; k++) { uart_putc(' '); uart_put_u32((uint32_t)d[r*16U+k]); }
+            uart_puts("\r\n");
+        }
+        return;
+    }
+    if (eqi(tok, "T7") != 0U) {
+        static uint16_t d[64];
+        uint8_t r, k;
+        adc64_read_raw_board(0U, d);
+        for (r = 0U; r < 4U; r++) {
+            uart_puts("REF"); uart_put_u32((uint32_t)r); uart_puts(":");
+            for (k = 0U; k < 16U; k++) { uart_putc(' '); uart_put_u32((uint32_t)d[r*16U+k]); }
+            uart_puts("\r\n");
+        }
+        return;
     }    if (eqi(tok, "POS") != 0U) {
         static adc64_frame_t fr;
         uint8_t r;

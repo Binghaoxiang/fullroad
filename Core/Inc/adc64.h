@@ -62,6 +62,7 @@ uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out);
 void     adc64_diag_delay(uint32_t us);
 uint16_t adc64_diag_spi(void);
 void     adc64_diag_bank(uint16_t *dst);
+void     adc64_read_raw_board(uint8_t which, uint16_t *out64);
 cs_t     k_cs_direct_get(uint8_t b);
 void     k_cs_direct_set(uint8_t b, GPIO_TypeDef *port, uint8_t pin);
 void     k_cs_direct_restore(uint8_t b, cs_t v);
