@@ -1,0 +1,7 @@
+si 1
+speed 100
+device STM32F429IG
+connect
+r
+g
+q

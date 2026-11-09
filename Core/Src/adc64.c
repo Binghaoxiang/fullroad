@@ -33,9 +33,26 @@ static const en_t k_en_b[ADC64_ROWS] = {
     { ADC64_EN_B_PORT_4, ADC64_EN_B_PIN_4 }
 };
 
-static const cs_t k_cs[ADC64_BOARD_COUNT] = {
-    { ADC64_A_CS_PORT, ADC64_A_CS_PIN },
-    { ADC64_B_CS_PORT, ADC64_B_CS_PIN }
+static cs_t k_cs[ADC64_BOARD_COUNT] = {
+    { ADC64_A_CS_PORT, ADC64_A_CS_PIN },   /* E0 下长边 */
+    { ADC64_B_CS_PORT, ADC64_B_CS_PIN },   /* E1 右短边 */
+    /* C/D 暂不参与扫描（4 板扫描路径待修） */
+
+};
+
+/* 四条边的通道范围：索引 i -> 列=i/4，行=i%4+1 */
+typedef struct
+{
+    uint8_t  i0;        /* 起始索引 */
+    uint8_t  i1;        /* 结束索引（含） */
+    uint8_t  rev;       /* 1 = 逆序 */
+} edge_t;
+
+static const edge_t k_edges[4] = {
+    { 21U, 63U, 0U },   /* E0 下长边 D25->D4F  43 颗 */
+    { 22U, 39U, 0U },   /* E1 右短边 D35->D49  18 颗 */
+    {  7U, 22U, 0U },   /* E2 上长边 D41->D35  16 颗 */
+    { 22U, 42U, 0U }    /* E3 左短边 D35->D3a  21 颗 */
 };
 
 static uint64_t s_mask[ADC64_BOARD_COUNT];
@@ -126,6 +143,19 @@ void adc64_init(void)
     GPIOI->MODER = (GPIOI->MODER & ~(3UL << 16)) | (1UL << 16);
     GPIOH->MODER = (GPIOH->MODER & ~(3UL << 8))  | (1UL << 8);
     GPIOI->BSRR  = (1UL << 8);
+
+    /* 新增两板的片选：PC13（上长边 FPC13）/ PI9（左短边 FPC14） */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+    (void)RCC->AHB1ENR;
+    GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);
+    GPIOC->OTYPER &= ~(1UL << 13);
+    GPIOC->OSPEEDR |= (3UL << 26);
+    GPIOC->BSRR = (1UL << 13);
+
+    GPIOI->MODER = (GPIOI->MODER & ~(3UL << 18)) | (1UL << 18);
+    GPIOI->OTYPER &= ~(1UL << 9);
+    GPIOI->OSPEEDR |= (3UL << 18);
+    GPIOI->BSRR = (1UL << 9);
     GPIOH->BSRR  = (1UL << 4);
 
     /* EN 行选时钟 */
@@ -366,7 +396,7 @@ void adc64_read_column(uint8_t ch, uint16_t *out)
 /* 长边 43 颗的最大值（用于闭环判据） */
 uint32_t adc64_long_max(void)
 {
-    adc64_frame_t fr;
+    static adc64_frame_t fr;
     uint16_t i;
     uint32_t mx = 0U;
     uint32_t v;
@@ -471,4 +501,280 @@ uint32_t adc64_long_width(void)
         while (y < x) { x = y; y = (x + var / x) / 2U; }
     }
     return x * 100U;
+}
+/*============================================================================
+ * 数据处理链：EMA 滤波 -> 暗电流扣除 -> 阈值 -> 重心定位 -> 峰值
+ *==========================================================================*/
+static uint16_t s_ema[2][ADC64_ROWS][ADC64_COLS];
+static uint8_t  s_ema_init = 0U;
+
+typedef struct
+{
+    uint16_t center;      /* 重心位置，单位 0.1 个索引 */
+    uint16_t maxv;        /* 峰值 */
+    uint32_t total;       /* 有效总和 */
+    uint8_t  valid;       /* 1 = 有有效信号 */
+} meas_t;
+
+static void ema_filter(const adc64_frame_t *fr, uint16_t *out_l, uint16_t *out_s)
+{
+    uint16_t i;
+    uint16_t raw;
+    uint16_t v;
+
+    for (i = 0U; i < 64U; i++) {
+        uint8_t col = (uint8_t)(i / 4U);
+        uint8_t row = (uint8_t)(i % 4U);
+        /* 长边用板 A，短边用板 B */
+        raw = fr->cell[0][row][col];
+        v = (uint16_t)(((uint32_t)s_ema[0][row][col] * 3U + raw) / 4U);
+        if (s_ema_init == 0U) { v = raw; }
+        s_ema[0][row][col] = v;
+        if (i >= 21U) { out_l[i - 21U] = v; }
+    }
+    for (i = 22U; i < 40U; i++) {
+        uint8_t col = (uint8_t)(i / 4U);
+        uint8_t row = (uint8_t)(i % 4U);
+        raw = fr->cell[1][row][col];
+        v = (uint16_t)(((uint32_t)s_ema[1][row][col] * 3U + raw) / 4U);
+        if (s_ema_init == 0U) { v = raw; }
+        s_ema[1][row][col] = v;
+        out_s[i - 22U] = v;
+    }
+    s_ema_init = 1U;
+}
+
+/* 由一维数组求重心（0.1 单位）和峰值 */
+static void measure_1d(const uint16_t *v, uint16_t n, meas_t *m)
+{
+    uint16_t i;
+    uint32_t mx = 0U;
+    uint32_t thr;
+    uint32_t s0 = 0U;
+    uint32_t s1 = 0U;
+
+    m->valid = 0U;
+    m->center = 0U;
+    m->maxv = 0U;
+    m->total = 0U;
+
+    for (i = 0U; i < n; i++) {
+        if ((uint32_t)v[i] > mx) { mx = (uint32_t)v[i]; }
+    }
+    if (mx < 300U) { return; }              /* 无有效光 */
+
+    /* 阈值 = 峰值的 35%，滤掉噪声和拖尾 */
+    thr = mx * 35U / 100U;
+    if (thr < 200U) { thr = 200U; }
+
+    for (i = 0U; i < n; i++) {
+        if ((uint32_t)v[i] >= thr) {
+            s0 += (uint32_t)v[i];
+            s1 += (uint32_t)v[i] * (uint32_t)i;
+        }
+    }
+    if (s0 == 0U) { return; }
+
+    m->valid  = 1U;
+    m->maxv   = (uint16_t)mx;
+    m->total  = s0;
+    m->center = (uint16_t)((s1 * 10U) / s0);   /* 0.1 索引 */
+}
+
+/* 供命令层调用：一次采集 + 全线处理 */
+void adc64_measure(uint16_t *x01, uint16_t *y01, uint16_t *maxl,
+                   uint16_t *maxs, uint8_t *valid)
+{
+    static adc64_frame_t fr;
+    static uint16_t vl[43];
+    static uint16_t vs[18];
+    meas_t ml;
+    meas_t ms;
+
+    adc64_set_en_hold(0U);
+    adc64_scan(&fr);
+    ema_filter(&fr, vl, vs);
+    measure_1d(vl, 43U, &ml);
+    measure_1d(vs, 18U, &ms);
+
+    *x01   = ml.center;
+    *y01   = ms.center;
+    *maxl  = ml.maxv;
+    *maxs  = ms.maxv;
+    *valid = (uint8_t)(ml.valid | (uint8_t)(ms.valid << 1));
+}
+
+void adc64_measure_reset(void)
+{
+    uint16_t i;
+    uint16_t j;
+    uint16_t k;
+
+    for (i = 0U; i < 2U; i++) {
+        for (j = 0U; j < ADC64_ROWS; j++) {
+            for (k = 0U; k < ADC64_COLS; k++) {
+                s_ema[i][j][k] = 0U;
+            }
+        }
+    }
+    s_ema_init = 0U;
+}
+
+/* 读取一条边：board=板号, e=边号，输出到 out（最多 64 个） */
+uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out)
+{
+    static adc64_frame_t fr;
+    uint16_t n = 0U;
+    uint8_t  i;
+    uint8_t  i0;
+    uint8_t  i1;
+
+    if ((board >= ADC64_BOARD_COUNT) || (e >= 4U)) { return 0U; }
+
+    adc64_set_en_hold(0U);
+    adc64_scan(&fr);
+
+    i0 = k_edges[e].i0;
+    i1 = k_edges[e].i1;
+
+    if (k_edges[e].rev == 0U) {
+        for (i = i0; i <= i1; i++) {
+            out[n] = fr.cell[board][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+            n++;
+        }
+    } else {
+        for (i = i1; ; i--) {
+            out[n] = fr.cell[board][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+            n++;
+            if (i == i0) { break; }
+        }
+    }
+    return n;
+}
+
+/* 一次扫描，提取四条边的全部数据（避免重复扫描） */
+void adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3,
+                          uint8_t *n_out)
+{
+    static adc64_frame_t fr;
+    uint16_t *dst[2];
+    uint8_t  i;
+    uint8_t  i0;
+    uint8_t  i1;
+    uint8_t  n;
+    uint16_t c;
+
+    dst[0] = b0; dst[1] = b1;
+    (void)b2; (void)b3;
+
+    adc64_set_en_hold(0U);
+    adc64_scan(&fr);
+
+    for (n = 0U; n < 2U; n++) {
+        c = 0U;
+        i0 = k_edges[n].i0; i1 = k_edges[n].i1;
+        if (k_edges[n].rev == 0U) {
+            for (i = i0; i <= i1; i++) {
+                dst[n][c] = fr.cell[n][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+                c++;
+            }
+        } else {
+            for (i = i1; ; i--) {
+                dst[n][c] = fr.cell[n][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+                c++;
+                if (i == i0) { break; }
+            }
+        }
+        n_out[n] = (uint8_t)c;
+    }
+    n_out[2] = 0U;
+    n_out[3] = 0U;
+}
+/*----------------------------------------------------------------------------
+ * 临时片选探测：把 k_cs[0] 换成指定的 port/pin，扫一次，取指定边的峰值
+ * 不改变 BOARD_COUNT，不影响原有 2 板逻辑
+ *--------------------------------------------------------------------------*/
+static void gpio_clock_on(GPIO_TypeDef *p)
+{
+    if (p == GPIOA)      { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN; }
+    else if (p == GPIOB) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN; }
+    else if (p == GPIOC) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; }
+    else if (p == GPIOD) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN; }
+    else if (p == GPIOE) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN; }
+    else if (p == GPIOF) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOFEN; }
+    else if (p == GPIOG) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOGEN; }
+    else if (p == GPIOH) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOHEN; }
+    else if (p == GPIOI) { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOIEN; }
+    else                 { RCC->AHB1ENR |= RCC_AHB1ENR_GPIOJEN; }
+}
+
+static void pin_set_output(GPIO_TypeDef *p, uint8_t pin)
+{
+    uint32_t sh = (uint32_t)pin * 2U;
+    gpio_clock_on(p);
+    p->MODER = (p->MODER & ~(3UL << sh)) | (1UL << sh);
+    p->OTYPER &= ~(1UL << pin);
+    p->OSPEEDR |= (3UL << sh);
+    p->BSRR = (1UL << pin);            /* 默认高 = 未选中 */
+}
+
+/* 用指定 CS 扫描一次，返回该边峰值 */
+uint32_t adc64_probe_cs(GPIO_TypeDef *port, uint8_t pin, uint8_t edge)
+{
+    static adc64_frame_t fr;
+    cs_t save;
+    uint8_t i;
+    uint8_t i0;
+    uint8_t i1;
+    uint32_t mx = 0U;
+    uint16_t v;
+
+    pin_set_output(port, pin);
+
+    save = k_cs[0];
+    k_cs[0].port = port;
+    k_cs[0].pin  = pin;
+    adc64_scan(&fr);
+    k_cs[0] = save;
+
+    i0 = k_edges[edge].i0;
+    i1 = k_edges[edge].i1;
+    for (i = i0; i <= i1; i++) {
+        v = fr.cell[0][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+        if ((uint32_t)v > mx) { mx = (uint32_t)v; }
+    }
+    return mx;
+}
+
+/* 运行时改片选：board 0/1 是 A/B，2/3 视作"临时借用板0的片选"
+ * port: 'A'..'J'  pin: 0..15 */
+uint8_t adc64_set_cs_pin(uint8_t slot, char port, uint8_t pin)
+{
+    GPIO_TypeDef *p;
+    uint32_t sh;
+
+    switch (port) {
+        case 'A': p = GPIOA; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN; break;
+        case 'B': p = GPIOB; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN; break;
+        case 'C': p = GPIOC; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN; break;
+        case 'D': p = GPIOD; RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN; break;
+        case 'E': p = GPIOE; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN; break;
+        case 'F': p = GPIOF; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOFEN; break;
+        case 'G': p = GPIOG; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOGEN; break;
+        case 'H': p = GPIOH; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOHEN; break;
+        case 'I': p = GPIOI; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOIEN; break;
+        default:  p = GPIOJ; RCC->AHB1ENR |= RCC_AHB1ENR_GPIOJEN; break;
+    }
+    (void)RCC->AHB1ENR;
+
+    sh = (uint32_t)pin * 2U;
+    p->MODER   = (p->MODER & ~(3UL << sh)) | (1UL << sh);
+    p->OTYPER &= ~(1UL << pin);
+    p->OSPEEDR |= (3UL << sh);
+    p->BSRR    = (1UL << pin);          /* 默认高，未选中 */
+
+    if (slot > 1U) { slot = 0U; }       /* 2/3 借用板 0 的位置 */
+    k_cs[slot].port = p;
+    k_cs[slot].pin  = pin;
+    return 1U;
 }

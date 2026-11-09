@@ -34,6 +34,8 @@
 static int32_t  s_vang_mdeg  = 0;
 static uint16_t s_ms_per_deg = 8U;   /* 每度转动毫秒数（30% 速度下标定） */
 static void aa_step_deg(int32_t deg);   /* 前向声明 */
+static int32_t  s_peak_ang = 0;          /* 峰值对应的舵机虚拟角度（度） */
+static uint8_t  s_peak_ok  = 0;          /* 1 = 已标定 */
 
 #define CMD_LINE_MAX      48U
 #define SWEEP_SPEED_MDEG  180000UL      /* 自检扫掠速度 180°/s */
@@ -1020,7 +1022,7 @@ static void do_track(char *arg)
         uart_puts("us\r\n");
         return;
     }    if (eqi(tok, "RAW1") != 0U) {
-        adc64_frame_t fr;
+        static adc64_frame_t fr;
         uint8_t i;
         uint8_t c;
         uint8_t r;
@@ -1158,7 +1160,7 @@ static void do_track(char *arg)
         uart_puts("\r\n");
         return;
     }    if (eqi(tok, "CUT") != 0U) {
-        adc64_frame_t fr;
+        static adc64_frame_t fr;
         uint8_t col;
         uint8_t rr;
         uint8_t n = 0U;
@@ -1193,7 +1195,7 @@ static void do_track(char *arg)
         uart_puts("\r\n");
         return;
     }    if ((eqi(tok, "LONG") != 0U) || (eqi(tok, "SHORT") != 0U)) {
-        adc64_frame_t fr;
+        static adc64_frame_t fr;
         uint16_t i;
         uint16_t i0;
         uint16_t i1;
@@ -1245,7 +1247,7 @@ static void do_track(char *arg)
         uart_puts("\r\n");
         return;
     }    if (eqi(tok, "SPREAD") != 0U) {
-        adc64_frame_t fr;
+        static adc64_frame_t fr;
         uint16_t i;
         uint32_t mx = 0U;
         uint32_t sum = 0U;
@@ -1502,8 +1504,9 @@ static void do_track(char *arg)
         uart_put_i32(best_ang);
         uart_puts("\r\n");
         return;
-    }    if (eqi(tok, "BOTH") != 0U) {
-        adc64_frame_t fr;
+    }
+    if (eqi(tok, "BOTH") != 0U) {
+        static adc64_frame_t fr;
         uint16_t i;
 
         adc64_set_en_hold(0U);
@@ -1572,8 +1575,160 @@ static void do_track(char *arg)
         uart_put_u32(m0);
         uart_puts("\r\n");
         return;
+    }    if (eqi(tok, "INFO") != 0U) {
+        uint16_t x01, y01, maxl, maxs;
+        uint8_t  valid;
+        int32_t  ang100;
+
+        adc64_measure(&x01, &y01, &maxl, &maxs, &valid);
+
+        /* 入射角 = 当前舵机角 - 峰值舵机角（单位 0.1 度） */
+        if (s_peak_ok != 0U) {
+            ang100 = (s_vangle / 100) - (s_peak_ang * 10);
+        } else {
+            ang100 = 0;
+        }
+
+        uart_puts("INFO X=");
+        uart_put_u32((uint32_t)x01);
+        uart_puts(" Y=");
+        uart_put_u32((uint32_t)y01);
+        uart_puts(" ML=");
+        uart_put_u32((uint32_t)maxl);
+        uart_puts(" MS=");
+        uart_put_u32((uint32_t)maxs);
+        uart_puts(" ANG=");
+        uart_put_i32(ang100);
+        uart_puts(" SA=");
+        uart_put_i32(s_vangle / 1000);
+        uart_puts(" PA=");
+        uart_put_i32(s_peak_ang);
+        uart_puts(" V=");
+        uart_put_u32((uint32_t)valid);
+        uart_puts(" C=");
+        uart_put_u32((uint32_t)s_peak_ok);
+        uart_puts("\r\n");
+        return;
+    }
+    if (eqi(tok, "CAL") != 0U) {
+        /* 标定：逐步转动，找长边峰值最大的舵机角度 */
+        uint16_t x01, y01, maxl, maxs;
+        uint8_t  valid;
+        int32_t  base;
+        int32_t  a;
+        int32_t  best_ang;
+        uint32_t best = 0U;
+        uint32_t cur;
+
+        servo_set_enabled(1U);
+        base = s_vangle / 1000;
+        best_ang = base;
+
+        for (a = base - 60; a <= base + 60; a += 6) {
+            aa_step_deg(a - (s_vangle / 1000));
+            s_vangle = a * 1000;
+            board_delay_us(150000U);
+            adc64_measure(&x01, &y01, &maxl, &maxs, &valid);
+            cur = (uint32_t)maxl;
+            if (cur > best) { best = cur; best_ang = a; }
+        }
+        aa_step_deg(best_ang - (s_vangle / 1000));
+        s_vangle   = best_ang * 1000;
+        s_peak_ang = best_ang;
+        s_peak_ok  = 1U;
+        adc64_measure_reset();
+
+        uart_puts("CAL done PEAK=");
+        uart_put_u32(best);
+        uart_puts(" ANG=");
+        uart_put_i32(best_ang);
+        uart_puts("\r\n");
+        return;
+    }    if (eqi(tok, "EDGES") != 0U) {
+        static uint16_t b0[64];
+        static uint16_t b1[64];
+        static uint16_t b2[64];
+        static uint16_t b3[64];
+        uint8_t ns[4];
+        uint8_t k;
+        uint16_t i;
+
+        adc64_read_edges_all(b0, b1, b2, b3, ns);
+
+        for (k = 0U; k < 4U; k++) {
+            const uint16_t *src = (k == 0U) ? b0 : (k == 1U) ? b1 : (k == 2U) ? b2 : b3;
+            uart_puts("E");
+            uart_put_u32((uint32_t)k);
+            uart_puts(":");
+            uart_put_u32((uint32_t)ns[k]);
+            for (i = 0U; i < (uint16_t)ns[k]; i++) {
+                uart_putc(' ');
+                uart_put_u32((uint32_t)src[i]);
+            }
+            uart_puts("\r\n");
+        }
+        return;
+    }    if (eqi(tok, "CSCAN") != 0U) {
+        /* 自动探测上/左两条边的 CS：把候选引脚逐个当片选，看哪根能读出数据 */
+        static GPIO_TypeDef * const ports[] = { GPIOI, GPIOI, GPIOI, GPIOI,
+                                                GPIOH, GPIOH, GPIOH,
+                                                GPIOG, GPIOG };
+        static const uint8_t pins[]         = { 9U, 10U, 11U, 12U,
+                                                5U, 6U, 7U,
+                                                6U, 7U };
+        uint8_t n = (uint8_t)(sizeof(pins) / sizeof(pins[0]));
+        uint8_t i;
+        uint32_t v2;
+        uint32_t v3;
+
+        for (i = 0U; i < n; i++) {
+            v2 = adc64_probe_cs(ports[i], pins[i], 2U);   /* 上长边 */
+            v3 = adc64_probe_cs(ports[i], pins[i], 3U);   /* 左短边 */
+            uart_puts("CS ");
+            uart_putc((ports[i] == GPIOI) ? 'I' :
+                      (ports[i] == GPIOH) ? 'H' : 'G');
+            uart_put_u32((uint32_t)pins[i]);
+            uart_puts(" E2=");
+            uart_put_u32(v2);
+            uart_puts(" E3=");
+            uart_put_u32(v3);
+            uart_puts("\r\n");
+        }
+        uart_puts("CSCAN done\r\n");
+        return;
+    }    if (eqi(tok, "CS") != 0U) {
+        /* 每调用一次自动切到下一个候选片选引脚，打印结果，便于用串口逐个试 */
+        static uint8_t idx = 0U;
+        static const char    cp[10] = { 'I','I','I','I','I','I','F','C','G','H' };
+        static const uint8_t pp[10] = {  8U, 11U, 5U, 6U, 7U, 9U, 1U, 14U, 6U, 5U };
+        static adc64_frame_t fr;
+        uint32_t mx;
+        uint16_t i;
+        uint16_t v2;
+
+        if (idx >= 10U) { idx = 0U; }
+        adc64_set_cs_pin(0U, cp[idx], pp[idx]);
+
+        adc64_set_en_hold(0U);
+        adc64_scan(&fr);
+
+        mx = 0U;
+        for (i = 21U; i < 64U; i++) {
+            v2 = fr.cell[0][(uint8_t)(i % 4U)][(uint8_t)(i / 4U)];
+            if ((uint32_t)v2 > mx) { mx = (uint32_t)v2; }
+        }
+        uart_puts("TRY");
+        uart_put_u32((uint32_t)idx);
+        uart_puts(" P");
+        uart_putc(cp[idx]);
+        uart_put_u32((uint32_t)pp[idx]);
+        uart_puts(" MAX=");
+        uart_put_u32(mx);
+        uart_puts("\r\n");
+        idx++;
+        return;
     }    if (eqi(tok, "POS") != 0U) {
-        adc64_frame_t fr;
+        static adc64_frame_t fr;
         uint8_t r;
         uint8_t c;
         uint32_t wsum = 0U;

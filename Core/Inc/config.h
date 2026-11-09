@@ -183,6 +183,10 @@ extern "C" {
 #define ADC64_A_CS_PIN          8U            /* long edge  */
 #define ADC64_B_CS_PORT         GPIOH
 #define ADC64_B_CS_PIN          4U            /* short edge */
+#define ADC64_C_CS_PORT      GPIOC
+#define ADC64_C_CS_PIN       13U
+#define ADC64_D_CS_PORT      GPIOI
+#define ADC64_D_CS_PIN       9U
 #define ADC64_SPI_BR            7U            /* fPCLK2/32 = 2.8MHz */
 
 /* ---- 两块板共用行�?---- */

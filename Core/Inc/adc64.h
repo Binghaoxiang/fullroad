@@ -17,6 +17,7 @@
 #define __ADC64_H
 
 #include "config.h"
+#include "stm32f4xx.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -51,6 +52,14 @@ uint32_t adc64_long_max(void);
 uint32_t adc64_long_max_fast(void);
 uint32_t adc64_long_conc(void);
 uint32_t adc64_long_width(void);
+void     adc64_measure(uint16_t *x01, uint16_t *y01, uint16_t *maxl,
+                       uint16_t *maxs, uint8_t *valid);
+void     adc64_measure_reset(void);
+uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out);
+uint8_t  adc64_set_cs_pin(uint8_t slot, char port, uint8_t pin);
+uint32_t adc64_probe_cs(GPIO_TypeDef *port, uint8_t pin, uint8_t edge);
+void     adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3,
+                              uint8_t *n_out);
 uint8_t  adc64_get_en_hold(void);
 uint8_t  adc64_get_shift(void);
 uint16_t adc64_get_acc_us(void);
