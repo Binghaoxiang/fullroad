@@ -21,6 +21,7 @@ except ImportError:
     import serial
 
 import edge_dsp
+import screen_pos
 
 # ---------------- 边定义 ----------------
 EDGES = [
@@ -72,6 +73,8 @@ class App:
         self.base = [None] * 4
         self.tracker = [edge_dsp.Tracker(0.5, 0.1) for _ in range(4)]
         self.show_raw = True
+        self.locator = screen_pos.ScreenLocator(200.0, 100.0)
+        self.pos = None
         self.last = 0.0
 
         root.title("四边探测器顺序核对（拆开显示）")
@@ -209,7 +212,16 @@ class App:
                 parts.append("%s %s" % (EDGES[k][0], s_))
             else:
                 parts.append("%s --" % EDGES[k][0])
-        self.lb.config(text="　　".join(parts) + "　　　OK %d / BAD %d" % (self.ok, self.bad))
+        if self.pos and self.pos.valid:
+            px = self.pos
+            qc = GOOD if px.quality > 0.8 else (WARN if px.quality > 0.5 else "#ff4d5e")
+            self.lb.config(
+                text="位置  X=%6.1f mm   Y=%6.1f mm     一致性 %3.0f%%   质量 %3.0f%%   │   %s   OK %d / BAD %d"
+                     % (px.x_mm, px.y_mm, px.consistency * 100, px.quality * 100,
+                        "　".join(parts), self.ok, self.bad))
+        else:
+            self.lb.config(text="位置  --（需要四条边都有信号）　　　" + "　".join(parts)
+                                + "　　　OK %d / BAD %d" % (self.ok, self.bad))
 
     def draw_strip(self, c, k, y):
         tag, cn, rng, direc, i0, i1, rev, col = EDGES[k]
