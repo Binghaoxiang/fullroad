@@ -130,6 +130,8 @@ class App:
         self.base = [None] * 4
 
         self.pos = None
+        self.sm_x = None        # 时域平滑后的 X
+        self.sm_y = None        # 时域平滑后的 Y
 
         self.last = 0.0
 
@@ -457,6 +459,7 @@ class App:
                 if got and all(self.proc[k] for k in range(4)):
 
                     self.pos = self.locator.localize(self.proc)
+                    self._smooth_pos()
 
                 if got:
 
@@ -692,6 +695,35 @@ class App:
 
     # ---------------- 左：屏幕视图 ----------------
 
+    def _smooth_pos(self):
+        """时域平滑 + 跳变抑制，抑制远端弱信号造成的漂移"""
+        p = self.pos
+        if not p or not p.valid:
+            return
+        if self.sm_x is None or self.sm_y is None:
+            self.sm_x = p.x_mm
+            self.sm_y = p.y_mm
+            return
+        dx = p.x_mm - self.sm_x
+        dy = p.y_mm - self.sm_y
+        # 跳变过大 -> 只走一小部分（抑制突发跳变）
+        # 静止时重平均，移动时快速跟随
+        def _alpha(d):
+            ad = abs(d)
+            if ad < 3.0:
+                return 0.12      # 静止：重平均，压制跳动
+            if ad < 15.0:
+                return 0.35      # 缓慢移动
+            if ad < 25.0:
+                return 0.50
+            return 0.60          # 快速移动：跟上
+        ax = _alpha(dx)
+        ay = _alpha(dy)
+        self.sm_x += dx * ax
+        self.sm_y += dy * ay
+        p.x_mm = self.sm_x
+        p.y_mm = self.sm_y
+
     def draw_screen(self):
 
         c = self.cv
@@ -842,7 +874,7 @@ class App:
 
         px = x0 + sw * (p.x_mm / SCREEN_W_MM)
 
-        py = y0 + 14 + (sh - 28) * (1.0 - p.y_mm / SCREEN_H_MM)   # 纵向方向已反转
+        py = y0 + 14 + (sh - 28) * (p.y_mm / SCREEN_H_MM)   # Y 大 -> 下方（与 E3 标记一致）
 
         px = max(x0 + 4, min(x0 + sw - 4, px))
 
@@ -938,7 +970,7 @@ class App:
 
         if p.y1 is not None:
 
-            ly = y0 + sh - sh * (p.y1 / SCREEN_H_MM)   # E1 显示轴反向（已确认正确）
+            ly = y0 + sh * (p.y1 / SCREEN_H_MM)   # E1 绿标常规绘制
 
             c.create_line(x0 + sw, ly, x0 + sw + 8, ly,
 
