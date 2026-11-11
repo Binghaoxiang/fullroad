@@ -842,7 +842,7 @@ class App:
 
         px = x0 + sw * (p.x_mm / SCREEN_W_MM)
 
-        py = y0 + 14 + (sh - 28) * (p.y_mm / SCREEN_H_MM)   # 留 14px 边距，避免画到框外
+        py = y0 + 14 + (sh - 28) * (1.0 - p.y_mm / SCREEN_H_MM)   # 纵向方向已反转
 
         px = max(x0 + 4, min(x0 + sw - 4, px))
 
