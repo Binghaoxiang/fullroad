@@ -756,7 +756,7 @@ class App:
 
         for gy in range(0, int(SCREEN_H_MM) + 1, 10):
 
-            py = y0 + sh - sh * gy / SCREEN_H_MM
+            py = y0 + sh * gy / SCREEN_H_MM
 
             c.create_line(x0, py, x0 + sw, py,
 
@@ -776,7 +776,7 @@ class App:
 
         for gy in range(0, int(SCREEN_H_MM) + 1, 25):
 
-            py = y0 + sh - sh * gy / SCREEN_H_MM
+            py = y0 + sh * gy / SCREEN_H_MM
 
             c.create_text(x0 - 18, py, text="%d" % gy, fill="#5a6b7e",
 
@@ -842,7 +842,7 @@ class App:
 
         px = x0 + sw * (p.x_mm / SCREEN_W_MM)
 
-        py = y0 + sh - sh * (p.y_mm / SCREEN_H_MM)
+        py = y0 + 14 + (sh - 28) * (p.y_mm / SCREEN_H_MM)   # 留 14px 边距，避免画到框外
 
         px = max(x0 + 4, min(x0 + sw - 4, px))
 
@@ -938,7 +938,7 @@ class App:
 
         if p.y1 is not None:
 
-            ly = y0 + sh - sh * (p.y1 / SCREEN_H_MM)
+            ly = y0 + sh - sh * (p.y1 / SCREEN_H_MM)   # E1 显示轴反向（已确认正确）
 
             c.create_line(x0 + sw, ly, x0 + sw + 8, ly,
 
@@ -946,7 +946,7 @@ class App:
 
         if p.y3 is not None:
 
-            ly = y0 + sh - sh * (p.y3 / SCREEN_H_MM)
+            ly = y0 + sh * (p.y3 / SCREEN_H_MM)
 
             c.create_line(x0 - 8, ly, x0, ly,
 
@@ -1027,6 +1027,12 @@ class App:
 
 
             data = [float(x) for x in raw] if raw else [0.0]
+            # 显示方向统一：垂直边（E1/E3）让「屏幕顶部」都落在波形左边
+            #   E3 索引 0 = 顶部 -> 不翻
+            #   E1 索引 0 = 底部 -> 翻转
+            # 右短边（E1）波形显示方向翻转：使其与左短边一致
+            if False:   # 波形翻转已撤销
+                pass
 
             vmax = max(data) if data else 1.0
 

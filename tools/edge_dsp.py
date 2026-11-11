@@ -343,26 +343,48 @@ def process_edge(raw, baseline=None, thr_ratio=0.25, noise_floor=60.0,
     # 有效判据：峰值必须明显高于噪声（3σ 以上）且绝对幅值够
     valid = (mx > nf + 3.0 * sigma) and (mx > noise_floor * 0.5)
 
-    # ---- ⑥ 重心（用自适应阈值）----
-    s0 = 0.0
-    s1 = 0.0
+    # ---- ⑥ 重心：从全局最大点向两侧扩展，遇到明显回落就停 ----
+    # 这样多峰时只取主峰，白线自动对齐肉眼看到的峰
+    pos = None
+    total = 0.0
     cnt = 0
-    for i in range(n):
-        if corr[i] >= thr:
-            s0 += corr[i]
-            s1 += corr[i] * i
+    peak_idx = None
+    peak_width = 0
+
+    if n > 0 and max(corr) >= thr:
+        gi = 0
+        for k in range(1, n):
+            if corr[k] > corr[gi]:
+                gi = k
+        peak_idx = gi
+        cut = max(thr, corr[gi] * 0.35)      # 主峰边界：峰值的 35% 或阈值，取大者
+        i0 = gi
+        while i0 > 0 and corr[i0 - 1] >= cut:
+            i0 -= 1
+        i1 = gi
+        while i1 < n - 1 and corr[i1 + 1] >= cut:
+            i1 += 1
+        s0 = 0.0
+        s1 = 0.0
+        for k in range(i0, i1 + 1):
+            s0 += corr[k]
+            s1 += corr[k] * k
             cnt += 1
-    if s0 > 0.0:
-        pos = s1 / s0
-        total = s0
-    else:
-        pos = None
-        total = 0.0
+        if s0 > 0.0:
+            pos = s1 / s0
+            total = s0
+            peak_width = cnt
 
     # ---- ⑦ 高斯拟合 ----
     fit = None
     if valid and n >= 5:
-        fit = gaussian_fit(corr, max(0.10, thr_ratio * 0.6))
+            if peak_idx is not None and peak_width >= 3:
+                _a = max(0, peak_idx - peak_width)
+                _b = min(n, peak_idx + peak_width + 1)
+                _f = gaussian_fit(corr[_a:_b], max(0.10, thr_ratio * 0.6))
+                fit = ((_f[0] + _a, _f[1]) + tuple(_f[2:])) if _f is not None else None
+            else:
+                fit = gaussian_fit(corr, max(0.10, thr_ratio * 0.6))
 
     return {
         "raw": raw,
@@ -378,5 +400,7 @@ def process_edge(raw, baseline=None, thr_ratio=0.25, noise_floor=60.0,
         "count": cnt,
         "fit": fit,
         "mu": (fit[0] if fit else pos),
+        "peak_idx": peak_idx,
+        "peak_width": peak_width,
         "sigma": (fit[1] if fit else None),
     }
