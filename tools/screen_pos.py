@@ -42,12 +42,13 @@ import math
 
 # ============================================================ 边定义
 # (边号, 中文名, 颗数, 测的轴, 索引0 对应的值是否在最大端)
+# (idx, 名称, 探测器数, 轴, 是否翻转, 校准偏移mm, 校准缩放)
+# 校准偏移为 0 时表示不做修正（原始映射）
 EDGES = [
-    # idx  name    count  axis   invert
-    (0, "下长边",  43,   "x",   False),   # D25→D4F  左→右
-    (1, "右短边",  18,   "y",   False),   # D35→D49  下→上
-    (2, "上长边",  42,   "x",   False),   # D4F→D35  左→右
-    (3, "左短边",  21,   "y",   True),    # D35→D3A  上→下（翻转）
+    (0, "下长边",  43,   "x",   False,   0.0,   1.0),   # D25→D4F 左→右
+    (1, "右短边",  18,   "y",   False,   0.0,   1.0),   # D35→D49 下→上
+    (2, "上长边",  42,   "x",   False,   0.0,   1.0),   # D4F→D35 左→右
+    (3, "左短边",  21,   "y",   True,    0.0,   1.0),   # D35→D3A 上→下（翻转）
 ]
 
 
@@ -75,6 +76,10 @@ class PosResult:
         return ("<PosResult x=%.1f y=%.1f mm  consistency=%.0f%%  quality=%.0f%%>"
                 % (self.x_mm, self.y_mm, self.consistency * 100,
                    self.quality * 100))
+
+
+# 运行时可修改的校准表：{边号: (offset_mm, scale)}
+CAL = {}
 
 
 class ScreenLocator:
@@ -115,12 +120,14 @@ class ScreenLocator:
             return None, 0.0
         u = max(0.0, min(1.0, u))
 
-        _, _, _, axis, invert = EDGES[e]
+        _, _, _, axis, invert, d_off, d_scale = EDGES[e]
+        cal_off, cal_scale = CAL.get(e, (d_off, d_scale))
         if invert:
             u = 1.0 - u
 
         span = self.W if axis == "x" else self.H
-        return u * span, float(total)
+        mm = u * span * cal_scale + cal_off
+        return mm, float(total)
 
     # ---------------- 主入口 ----------------
     def localize(self, edges):

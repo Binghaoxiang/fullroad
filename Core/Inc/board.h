@@ -42,6 +42,8 @@ uint16_t board_adc_read(uint8_t ch);    /* 单次转换，返�?12bit 原始�
 
 /* ---- SPI4（两�?ADC64 板共用，SDO 并联，靠各自�?CS 分时选通） ---- */
 void     board_spi_init(void);
+void     board_spi5_init(void);
+void     board_spi_select(uint8_t which);
 uint16_t board_spi_transfer16(uint16_t tx);
 void     board_spi_set_mode(uint8_t mode);   /* 0..3 = CPOL/CPHA */
 

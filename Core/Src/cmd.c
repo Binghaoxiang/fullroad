@@ -470,6 +470,10 @@ static void do_version(void)
     uart_puts("REG C=");    uart_put_u32(GPIOC->MODER);
     uart_puts(" D=");       uart_put_u32(GPIOD->MODER);
     uart_puts(" G=");       uart_put_u32(GPIOG->MODER);  uart_puts("\r\n");
+    uart_puts("REG E=");    uart_put_u32(GPIOE->MODER);
+    uart_puts(" F=");       uart_put_u32(GPIOF->MODER);  uart_puts("\r\n");
+    uart_puts("SPI3 CR1="); uart_put_u32(SPI3->CR1);
+    uart_puts(" SPI4 CR1="); uart_put_u32(SPI4->CR1); uart_puts("\r\n");
     uart_puts("REG H=");    uart_put_u32(GPIOH->MODER);
     uart_puts(" I=");       uart_put_u32(GPIOI->MODER);  uart_puts("\r\n");
     uart_puts("REG ENR=");  uart_put_u32(RCC->AHB1ENR);  uart_puts("\r\n");

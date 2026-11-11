@@ -1,0 +1,22 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# 提交前自动检查（由 codestyle/install_hooks.ps1 启用）
+#   查：不该入库的文件 / 大文件 / 明文密码 / 源文件漏加进 Keil 工程 / 中断里延时
+#
+#   临时跳过一次：  git commit --no-verify
+#   彻底关掉：      git config --unset core.hooksPath
+# ---------------------------------------------------------------------------
+REPO=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$REPO" || exit 0
+[ -f codestyle/check_code.py ] || exit 0
+
+if command -v py >/dev/null 2>&1; then
+    py -3 codestyle/check_code.py --staged
+elif command -v python3 >/dev/null 2>&1; then
+    python3 codestyle/check_code.py --staged
+elif command -v python >/dev/null 2>&1; then
+    python codestyle/check_code.py --staged
+else
+    echo "  [跳过检查] 没找到 Python"
+    exit 0
+fi

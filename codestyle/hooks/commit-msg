@@ -1,0 +1,24 @@
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# 检查提交信息格式：<类型>(<模块>): <说明>
+#   类型：feat fix release hotfix refactor perf docs test build chore hw revert
+#   例：  feat(adc64): 增加 FPC12 原始值读取
+#         fix(uart): 清 ORE 标志，避免连续收包丢字节
+#   git 自动生成的 Merge / Revert 信息不检查。
+#
+#   临时跳过一次：  git commit --no-verify
+# ---------------------------------------------------------------------------
+REPO=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$REPO" || exit 0
+[ -f codestyle/check_code.py ] || exit 0
+[ -n "$1" ] || exit 0
+
+if command -v py >/dev/null 2>&1; then
+    py -3 codestyle/check_code.py --message "$1"
+elif command -v python3 >/dev/null 2>&1; then
+    python3 codestyle/check_code.py --message "$1"
+elif command -v python >/dev/null 2>&1; then
+    python codestyle/check_code.py --message "$1"
+else
+    exit 0
+fi

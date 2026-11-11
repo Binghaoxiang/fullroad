@@ -180,9 +180,9 @@ extern "C" {
 #define ADC64_AF                5U
 #define ADC64_SPI_BR            7U            /* fPCLK2/32 = 2.8MHz */
 #define ADC64_A_CS_PORT         GPIOI
-#define ADC64_A_CS_PIN          8U            /* long edge  */
+#define ADC64_A_CS_PIN          8U            /* PI8 = SPI4_CS4 = FPC12 = 下长边 E0 */
 #define ADC64_B_CS_PORT         GPIOH
-#define ADC64_B_CS_PIN          4U            /* short edge */
+#define ADC64_B_CS_PIN          4U            /* PH4 = SPI4_CS0 = FPC16 = 右短边 E1 */
 #define ADC64_C_CS_PORT      GPIOC
 #define ADC64_C_CS_PIN       13U
 #define ADC64_D_CS_PORT      GPIOI
@@ -199,16 +199,16 @@ extern "C" {
 #define ADC64_EN_A_PORT_3       GPIOH
 #define ADC64_EN_A_PIN_3        11U
 #define ADC64_EN_A_PORT_4       GPIOH
-#define ADC64_EN_A_PIN_4        10U  /* long  edge: nets 17-20 = PD13/PD12/PD11/PD10 */
+#define ADC64_EN_A_PIN_4        10U  /* nets 17-20 = PD13/PD12/PH11/PH10 -> FPC12 下长边 E0 */
 #define ADC64_EN_B_PORT_1       GPIOD
-#define ADC64_EN_B_PIN_1        7U
+#define ADC64_EN_B_PIN_1        7U   /* nets 01-04 = PD7/PD6/PD5/PD4 -> FPC16 右短边 E1 */
 #define ADC64_EN_B_PORT_2       GPIOD
 #define ADC64_EN_B_PIN_2        6U
 #define ADC64_EN_B_PORT_3       GPIOD
 #define ADC64_EN_B_PIN_3        5U
 #define ADC64_EN_B_PORT_4       GPIOD
 #define ADC64_EN_B_PIN_4        4U
-#define ADC64_EN_SETTLE_US      2000U          /* 切行后等模拟通路稳定 */
+#define ADC64_EN_SETTLE_US      2000U          /* 切行后等模拟通路稳定（EN 组已隔离，负载降低） */
 #define ADC64_MIN_TOTAL         2000U         /* �?有光"的最小总码�?*/
 /*==============================================================================
  * 7. 版本信息

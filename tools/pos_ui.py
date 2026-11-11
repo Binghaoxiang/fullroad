@@ -100,10 +100,21 @@ EDGE_COLORS = ["#00d1ff", "#25c26e", "#ffb020", "#ff4d5e"]
 
 
 
+
+# 四条边的坐标校准（offset_mm, scale）
+# 依据实测：E0 比 E2 偏小 11.1mm，E1 比 E3 偏大 13.7mm
+# scale=1.0 表示只做平移修正；后续可用两点法精调
+CAL_TABLE = {
+    0: (0.0, 1.0),     # 下边：映射已修正，无需偏移
+    1: (0.0, 1.0),     # 右边：映射已修正，无需偏移
+    2: (0.0, 1.0),     # 上长边：基准
+    3: (0.0, 1.0),     # 左短边：基准
+}
 class App:
 
     def __init__(self, root, port):
 
+        screen_pos.CAL.update(CAL_TABLE)
         self.root = root
 
         self.ser = None

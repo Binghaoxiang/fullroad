@@ -1,7 +1,8 @@
-﻿# 构建产物
+# ============ 构建产物（编译一次就生成，不入库） ============
 build/
 build2/
 build3/
+dist/
 MDK-ARM/Objects/
 MDK-ARM/Listings/
 MDK-ARM/DebugConfig/
@@ -9,16 +10,42 @@ MDK-ARM/RTE/
 *.o
 *.d
 *.crf
+*.dep
+*.lnp
+*.lst
+*.map
+*.htm
+*.iex
+*.sct
 *.axf
 *.hex
 *.bin
-*.lst
-*.map
-*.dep
-*.htm
-*.lnp
 
-# 预览与临时
+# ============ Keil / J-Link 本地文件（每人每台机器都不一样） ============
+*.uvguix.*
+*.uvguix
+JLinkLog.txt
+JLinkSettings.ini
+*.log
+
+# ============ 安装包 / 大二进制（放网盘，不入库） ============
+_pkg/
+*.exe
+*.msi
+*.iso
+*.zip
+
+# ============ Office 临时锁文件（打开文档时才有） ============
+~$*.docx
+~$*.xlsx
+~$*.pptx
+
+# ============ Python ============
+__pycache__/
+*.pyc
+.venv/
+
+# ============ 预览与临时（项目私有） ============
 preview_ppt/
 checks.json
 chk5.json
@@ -26,14 +53,12 @@ tools/ui_err.txt
 tools/ui_out.txt
 tools/ec_err.txt
 
-# Python
-__pycache__/
-*.pyc
-
-# 备份
+# ============ 备份 ============
 *.bak
 
-# 大文件（不入库）
-_pkg/*.exe
-dist/*.zip
-
+# ============ 编辑器 / 系统 ============
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+desktop.ini

@@ -49,6 +49,7 @@ uint64_t adc64_mask(uint8_t board);
 void     adc64_default_masks(void);
 void     adc64_set_acc_us(uint16_t us);
 void     adc64_set_shift(uint8_t s);
+void     adc64_set_en_group(uint8_t g);
 void     adc64_set_en_hold(uint8_t mask);
 void     adc64_read_column(uint8_t ch, uint16_t *out);
 uint32_t adc64_long_max(void);

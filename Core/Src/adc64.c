@@ -33,6 +33,11 @@ static const en_t k_en_c[ADC64_ROWS] = {
 };
 
 /* 板 D 的行选（FPC14 pin6-9 -> EN09..EN12 = PG7/PG6/PG5/PG4） */
+/* 板 E 的行选（FPC15 pin6-9 -> 网络05..08 = PD3/PD2/PD1/PD0） */
+static const en_t k_en_e[ADC64_ROWS] = {
+    { GPIOD,  3U }, { GPIOD,  2U }, { GPIOD,  1U }, { GPIOD,  0U }
+};
+
 static const en_t k_en_d[ADC64_ROWS] = {
     { GPIOG,  7U }, { GPIOG,  6U }, { GPIOG,  5U }, { GPIOG,  4U }
 };
@@ -53,8 +58,8 @@ typedef struct
 } edge_t;
 
 static const edge_t k_edges[4] = {
-    { 21U, 63U, 0U },   /* E0 下长边 D25->D4F  43 颗 */
-    { 22U, 39U, 0U },   /* E1 右短边 D35->D49  18 颗 */
+        { 21U, 63U, 0U },   /* E0 下长边 D25->D4F  43 颗 = FPC12 */
+        { 22U, 39U, 0U },   /* E1 右短边 D35->D49  18 颗 = 板A(FPC12) */
     { 22U, 63U, 1U },   /* E2 上长边 D4F->D35  42 颗（逆序） */
     { 22U, 42U, 0U }    /* E3 左短边 D35->D3a  21 颗 */
 };
@@ -63,12 +68,16 @@ static uint64_t s_mask[ADC64_BOARD_COUNT];
 static uint8_t  s_acc_us    = 20U;
 static uint8_t  s_cmd_shift = 12U;
 static uint8_t  s_en_hold   = 0U;
+static uint8_t  s_en_group  = 0xFFU;   /* 0xFF=驱动全部；0..3=只驱动该组 */
 
 void adc64_set_acc_us(uint16_t us) { s_acc_us = (us > 200U) ? 200U : (uint8_t)us; }
 uint16_t adc64_get_acc_us(void)    { return (uint16_t)s_acc_us; }
 void adc64_set_shift(uint8_t s)    { s_cmd_shift = (s > 15U) ? 15U : s; }
 uint8_t adc64_get_shift(void)      { return s_cmd_shift; }
 void adc64_set_en_hold(uint8_t m)  { s_en_hold = m; }
+
+/* 选择本次扫描要驱动的 EN 组：0=板A(下边FPC12) 1=板B(右边FPC16) 2=板C(上边FPC13) 3=板D(左边FPC14) */
+void adc64_set_en_group(uint8_t g) { s_en_group = (g > 4U) ? 0xFFU : g; }
 uint8_t adc64_get_en_hold(void)    { return s_en_hold; }
 
 /*----------------------------------------------------------------------------
@@ -76,6 +85,8 @@ uint8_t adc64_get_en_hold(void)    { return s_en_hold; }
  *--------------------------------------------------------------------------*/
 static void cs_low(uint8_t b)  { k_cs[b].port->BSRR = (uint32_t)(1UL << (k_cs[b].pin + 16U)); }
 static void cs_high(uint8_t b) { k_cs[b].port->BSRR = (uint32_t)(1UL << k_cs[b].pin); }
+
+static void cs_all_high(void);   /* 前向声明：四条 FPC 片选全部拉高 */
 
 static void en_low(const en_t *e)  { e->port->BSRR = (uint32_t)(1UL << (e->pin + 16U)); }
 static void en_high(const en_t *e) { e->port->BSRR = (uint32_t)(1UL << e->pin); }
@@ -89,6 +100,7 @@ static void en_off_all(void)
         en_low(&k_en_b[r]);
         en_low(&k_en_c[r]);
         en_low(&k_en_d[r]);
+        en_low(&k_en_e[r]);
     }
 }
 
@@ -111,18 +123,40 @@ void adc64_set_en_mask(uint8_t mask)
 static void en_on(uint8_t row)
 {
     uint8_t r;
+    uint8_t g = s_en_group;
 
+    /* 只驱动目标板那一组；其余三组全部拉低，彻底消除 FPC 之间的串扰 */
     for (r = 0U; r < ADC64_ROWS; r++) {
-        if (r == row) {
-            en_high(&k_en_a[r]);
-            en_high(&k_en_b[r]);
-            en_high(&k_en_c[r]);
-            en_high(&k_en_d[r]);
+        uint8_t hi = (r == row) ? 1U : 0U;
+
+        if ((g == 0xFFU) || (g == 0U)) {
+            if (hi != 0U) { en_high(&k_en_a[r]); } else { en_low(&k_en_a[r]); }
         } else {
             en_low(&k_en_a[r]);
+        }
+
+        if ((g == 0xFFU) || (g == 1U)) {
+            if (hi != 0U) { en_high(&k_en_b[r]); } else { en_low(&k_en_b[r]); }
+        } else {
             en_low(&k_en_b[r]);
+        }
+
+        if ((g == 0xFFU) || (g == 2U)) {
+            if (hi != 0U) { en_high(&k_en_c[r]); } else { en_low(&k_en_c[r]); }
+        } else {
             en_low(&k_en_c[r]);
+        }
+
+        if ((g == 0xFFU) || (g == 3U)) {
+            if (hi != 0U) { en_high(&k_en_d[r]); } else { en_low(&k_en_d[r]); }
+        } else {
             en_low(&k_en_d[r]);
+        }
+
+        if ((g == 4U)) {
+            if (hi != 0U) { en_high(&k_en_e[r]); } else { en_low(&k_en_e[r]); }
+        } else {
+            en_low(&k_en_e[r]);
         }
     }
 }
@@ -186,6 +220,13 @@ void adc64_init(void)
     GPIOI->OTYPER &= ~(1UL << 9);
     GPIOI->OSPEEDR |= (3UL << 18);
     GPIOI->BSRR = (1UL << 9);
+
+    /* 新增：FPC15 的片选 SPI4_CS1 = PH3 */
+    GPIOH->MODER = (GPIOH->MODER & ~(3UL << 6)) | (1UL << 6);   /* PH3 输出 */
+    GPIOH->OTYPER &= ~(1UL << 3);
+    GPIOH->OSPEEDR = (GPIOH->OSPEEDR & ~(3UL << 6)) | (2UL << 6); /* 高速 */
+    GPIOH->PUPDR = (GPIOH->PUPDR & ~(3UL << 6));
+    GPIOH->BSRR = (1UL << 3);                              /* 初始高电平 */
     GPIOH->BSRR  = (1UL << 4);
 
     /* EN 行选时钟 */
@@ -199,6 +240,7 @@ void adc64_init(void)
         en_gpio_cfg(&k_en_c[i]);
         en_gpio_cfg(&k_en_d[i]);
         en_gpio_cfg(&k_en_b[i]);
+        en_gpio_cfg(&k_en_e[i]);      /* FPC15: PD3/PD2/PD1/PD0 */
     }
 
     /* 强制重写 GPIOH 的 PH10/PH11 为推挽输出 */
@@ -217,6 +259,19 @@ void adc64_init(void)
         en_force_cfg(&k_en_d[i]);
     }
     }
+
+    /* 新增：SPI5 侧的两条片选 PE12(FPC11 上长边) / PE13(FPC10 左短边) */
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOEEN;
+    (void)RCC->AHB1ENR;
+    GPIOE->MODER = (GPIOE->MODER & ~((3UL << 24) | (3UL << 26)))
+                 | ((1UL << 24) | (1UL << 26));      /* PE12/PE13 输出 */
+    GPIOE->OTYPER &= ~((1UL << 12) | (1UL << 13));
+    GPIOE->OSPEEDR = (GPIOE->OSPEEDR & ~((3UL << 24) | (3UL << 26)))
+                  | ((2UL << 24) | (2UL << 26));     /* 高速 */
+    GPIOE->PUPDR = (GPIOE->PUPDR & ~((3UL << 24) | (3UL << 26)));
+    GPIOE->BSRR = (1UL << 12) | (1UL << 13);         /* 初始高电平 */
+
+    board_spi5_init();
 
     en_off_all();
     adc64_default_masks();
@@ -280,6 +335,9 @@ void adc64_scan(adc64_frame_t *f)
     uint8_t b;
     uint8_t c;
 
+    cs_all_high();                 /* 先确保四条 FPC 全部未选中 */
+    board_delay_us(500U);          /* 给 PC13 足够时间把 FPC13 的 NCS 拉高（备份域引脚驱动弱） */
+
     {
         uint8_t w;
         for (w = 0U; w < 4U; w++) {
@@ -288,6 +346,10 @@ void adc64_scan(adc64_frame_t *f)
             (void)board_spi_transfer16(0x0000U);
             cs_high(0U);
             board_delay_us(50);
+            cs_low(1U);
+            board_delay_us(s_acc_us);
+            (void)board_spi_transfer16(0x0000U);
+            cs_high(1U);
         }
     }
 
@@ -696,8 +758,13 @@ uint16_t adc64_read_edge(uint8_t board, uint8_t e, uint16_t *out)
 /* 把两块板的片选都拉高（未选中），避免并联 MISO 冲突 */
 static void cs_all_high(void)
 {
-    k_cs[0].port->BSRR = (1UL << k_cs[0].pin);
-    k_cs[1].port->BSRR = (1UL << k_cs[1].pin);
+    /* 四条 FPC 共用 SPI4_MISO，任何一条 CS 未拉高都可能抢占总线 */
+    GPIOI->BSRR = (1UL << 8U);      /* FPC12 下边  PI8  */
+    GPIOE->BSRR = (1UL << 12U);     /* FPC11 上边  PE12 */
+    GPIOE->BSRR = (1UL << 13U);     /* FPC10 左边  PE13 */
+    GPIOH->BSRR = (1UL << 4U);      /* FPC16 右边  PH4  */
+    GPIOC->BSRR = (1UL << 13U);     /* FPC13 上边  PC13 */
+    GPIOI->BSRR = (1UL << 9U);      /* FPC14 左边  PI9  */
 }
 
 /* 提取一条边到目标缓冲（从 fr.cell[src] 取） */
@@ -728,31 +795,47 @@ void adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3
                           uint8_t *n_out)
 {
     static adc64_frame_t fr;
-    cs_t save;
+    /* 每遍：片选端口 / 片选引脚 / EN 组 / SPI 外设 */
+    static GPIO_TypeDef * const tport[4] = { GPIOI,  GPIOH,  GPIOE,  GPIOE  };
+    static const uint8_t        tpin[4]  = { 8U,     4U,     12U,    13U    };
+    static const uint8_t        grp[4]   = { 0U,     1U,     1U,     4U     };
+    static const uint8_t        spisel[4] = { 0U,    0U,     1U,     1U     };
+    cs_t    save0;
+    cs_t    save1;
+    uint8_t pass;
 
-    /* ---- 第一遍：板 A(下长边) + 板 B(右短边) ---- */
-    adc64_set_en_hold(0U);
-    adc64_scan(&fr);
-    n_out[0] = edge_extract(&fr, 0U, 0U, b0);
-    n_out[1] = edge_extract(&fr, 1U, 1U, b1);
+    /*   pass 0: SPI4 PI8  (FPC12) -> E0 下长边 43 颗  EN=网络17-20
+     *   pass 1: SPI4 PH4  (FPC16) -> E1 右短边 18 颗  EN=网络01-04
+     *   pass 2: SPI5 PE12 (FPC11) -> E2 上长边 42 颗  EN=网络01-04
+     *   pass 3: SPI5 PE13 (FPC10) -> E3 左短边 21 颗  EN=网络05-08
+     */
+    for (pass = 0U; pass < 4U; pass++) {
+        adc64_set_en_group(grp[pass]);
+        adc64_set_en_hold(0U);
+        board_spi_select(spisel[pass]);
 
-    /* ---- 第二遍：板 C 上长边，片选临时切到 PC13 ---- */
-    save = k_cs[0];
-    k_cs[0].port = ADC64_C_CS_PORT;
-    k_cs[0].pin  = ADC64_C_CS_PIN;
-    k_cs[0].port->BSRR = (1UL << ADC64_C_CS_PIN);      /* 先拉高 */
-    adc64_scan(&fr);
-    k_cs[0] = save;
-    n_out[2] = edge_extract(&fr, 0U, 2U, b2);
+        save0 = k_cs[0];
+        save1 = k_cs[1];
 
-    /* ---- 第三遍：板 D 左短边，片选临时切到 PI9 ---- */
-    save = k_cs[0];
-    k_cs[0].port = ADC64_D_CS_PORT;
-    k_cs[0].pin  = ADC64_D_CS_PIN;
-    k_cs[0].port->BSRR = (1UL << ADC64_D_CS_PIN);
-    adc64_scan(&fr);
-    k_cs[0] = save;
-    n_out[3] = edge_extract(&fr, 0U, 3U, b3);
+        k_cs[0].port = tport[pass];
+        k_cs[0].pin  = tpin[pass];
+        k_cs[0].port->BSRR = (1UL << k_cs[0].pin);
+
+        adc64_scan(&fr);
+
+        k_cs[0] = save0;
+        k_cs[1] = save1;
+
+        switch (pass) {
+        case 0U: n_out[0] = edge_extract(&fr, 0U, 0U, b0); break;  /* 下长边 43 */
+        case 1U: n_out[1] = edge_extract(&fr, 0U, 1U, b1); break;  /* 右短边 18 */
+        case 2U: n_out[2] = edge_extract(&fr, 0U, 2U, b2); break;  /* 上长边 42 */
+        case 3U: n_out[3] = edge_extract(&fr, 0U, 3U, b3); break;  /* 左短边 21 */
+        default: break;
+        }
+    }
+
+    board_spi_select(0U);
 }
 /*----------------------------------------------------------------------------
  * 临时片选探测：把 k_cs[0] 换成指定的 port/pin，扫一次，取指定边的峰值

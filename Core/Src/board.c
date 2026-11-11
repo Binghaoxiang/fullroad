@@ -25,6 +25,9 @@ static uint8_t           s_hse_ok  = 0;   /* 1 = 当前主频来自 HSE + PLL */
 #define PLL_WAIT_COUNT   0x100000UL
 #define HSE_WAIT_COUNT   0x50000UL
 
+/* 当前活动的 SPI 外设：SPI4(下/右) 或 SPI5(上/左) */
+static volatile SPI_TypeDef *s_active_spi = SPI4;
+
 /*----------------------------------------------------------------------------
  * 内部工具
  *--------------------------------------------------------------------------*/
@@ -298,11 +301,18 @@ static uint8_t spi8(uint8_t d)
 {
     uint32_t guard;
     guard = 200000UL;
-    while (((ADC64_SPI->SR & SPI_SR_TXE) == 0U) && (guard != 0U)) { guard--; }
+    while (((s_active_spi->SR & SPI_SR_TXE) == 0U) && (guard != 0U)) { guard--; }
     *(volatile uint8_t *)&ADC64_SPI->DR = d;
     guard = 200000UL;
-    while (((ADC64_SPI->SR & SPI_SR_RXNE) == 0U) && (guard != 0U)) { guard--; }
+    while (((s_active_spi->SR & SPI_SR_RXNE) == 0U) && (guard != 0U)) { guard--; }
     return *(volatile uint8_t *)&ADC64_SPI->DR;
+}
+
+
+/* 切换当前使用的 SPI 外设：0=SPI4(下/右) 1=SPI5(上/左) */
+void board_spi_select(uint8_t which)
+{
+    s_active_spi = (which != 0U) ? SPI3 : SPI4;
 }
 
 void board_spi_init(void)
@@ -330,20 +340,21 @@ void board_spi_set_mode(uint8_t mode)
     ADC64_SPI->CR1 = cr1;
 }
 
+
 uint16_t board_spi_transfer16(uint16_t tx)
 {
     uint32_t guard;
     uint16_t rx;
 
     guard = 200000UL;
-    while (((ADC64_SPI->SR & SPI_SR_TXE) == 0U) && (guard != 0U)) { guard--; }
+    while (((s_active_spi->SR & SPI_SR_TXE) == 0U) && (guard != 0U)) { guard--; }
     if (guard == 0U) { return 0xFFFFU; }        /* 发不出去 */
-    *(volatile uint16_t *)&ADC64_SPI->DR = tx;   /* DFF=1：必须写 16 位 */
+    *(volatile uint16_t *)&s_active_spi->DR = tx;   /* DFF=1：必须写 16 位 */
 
     guard = 200000UL;
-    while (((ADC64_SPI->SR & SPI_SR_RXNE) == 0U) && (guard != 0U)) { guard--; }
-    if (guard == 0U) { (void)*(volatile uint16_t *)&ADC64_SPI->DR; return 0xFFFFU; }  /* 收不到 */
-    rx = *(volatile uint16_t *)&ADC64_SPI->DR;
+    while (((s_active_spi->SR & SPI_SR_RXNE) == 0U) && (guard != 0U)) { guard--; }
+    if (guard == 0U) { (void)*(volatile uint16_t *)&s_active_spi->DR; return 0xFFFFU; }  /* 收不到 */
+    rx = *(volatile uint16_t *)&s_active_spi->DR;
 
     return rx;
 }
@@ -437,3 +448,23 @@ void board_servo_pwm_enable(uint8_t enable)
     }
 }
 
+/*----------------------------------------------------------------------------
+ * 第二条总线：SPI3  PC10=SCK PC11=MISO PC12=MOSI (AF6, APB1)
+ * 供上长边(FPC11)与左短边(FPC10)使用，MISO 走 H9
+ *--------------------------------------------------------------------------*/
+void board_spi5_init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+    RCC->APB1ENR |= RCC_APB1ENR_SPI3EN;
+    (void)RCC->AHB1ENR;
+    (void)RCC->APB1ENR;
+
+    board_gpio_af_config(GPIOC, 10U, 6U, 0U);   /* SCK  PC10 AF6 */
+    board_gpio_af_config(GPIOC, 11U, 6U, 0U);   /* MISO PC11 AF6 */
+    board_gpio_af_config(GPIOC, 12U, 6U, 0U);   /* MOSI PC12 AF6 */
+
+    SPI3->CR1 = 0U;
+    SPI3->CR2 = 0U;
+    SPI3->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI | SPI_CR1_CPHA | SPI_CR1_DFF
+              | ((uint32_t)ADC64_SPI_BR << 3) | SPI_CR1_SPE;
+}
