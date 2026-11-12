@@ -1,9 +1,0 @@
-si 1
-speed 100
-device STM32F429IG
-connect
-erase
-loadfile C:\Users\a\Desktop\Pro\Laser_communication\Software\Severo\MDK-ARM\Objects\Severo.hex
-r
-g
-q

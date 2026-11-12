@@ -436,6 +436,11 @@
               <FileType>1</FileType>
               <FilePath>..\Core\Src\adc64.c</FilePath>
             </File>
+<File>
+              <FileName>screen_track.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\Core\Src\screen_track.c</FilePath>
+            </File>
             <File>
               <FileName>track.c</FileName>
               <FileType>1</FileType>

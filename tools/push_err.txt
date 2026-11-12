@@ -1,5 +1,0 @@
-remote: warning: See https://gh.io/lfs for more information.        
-remote: warning: File _pkg/SetupSTM32CubeProgrammer_win64.exe is 87.79 MB; this is larger than GitHub's recommended maximum file size of 50.00 MB        
-remote: warning: GH001: Large files detected. You may want to try Git Large File Storage - https://git-lfs.github.com.        
-To https://github.com/Binghaoxiang/fullroad.git
- * [new branch]      feature0_1 -> feature0_1

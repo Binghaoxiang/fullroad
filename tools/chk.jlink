@@ -1,9 +1,0 @@
-si 1
-speed 1000
-device STM32F429IG
-connect
-mem 40000840 4
-mem 40000820 4
-mem 40020C00 4
-mem 40020C24 4
-q
