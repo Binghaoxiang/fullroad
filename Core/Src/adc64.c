@@ -58,10 +58,10 @@ typedef struct
 } edge_t;
 
 static const edge_t k_edges[4] = {
-    { 21U, 63U, 0U },   /* E0 下长边 43 颗 */
+        { 21U, 63U, 0U },   /* E0 下长边 D25->D4F  43 颗 = FPC12 */
         { 22U, 39U, 1U },   /* E1 右短边 逆序（物理顺序与丝印相反） */
     { 22U, 63U, 1U },   /* E2 上长边 D4F->D35  42 颗（逆序） */
-    { 22U, 42U, 0U }    /* E3 左短边 21 颗 */
+    { 22U, 42U, 0U }    /* E3 左短边 D35->D3a  21 颗 */
 };
 
 static uint64_t s_mask[ADC64_BOARD_COUNT];
@@ -210,7 +210,6 @@ void adc64_init(void)
 
 
     RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIODEN;
     (void)RCC->AHB1ENR;
     GPIOC->MODER = (GPIOC->MODER & ~(3UL << 26)) | (1UL << 26);
     GPIOC->OTYPER &= ~(1UL << 13);
@@ -220,19 +219,6 @@ void adc64_init(void)
     GPIOI->MODER = (GPIOI->MODER & ~(3UL << 18)) | (1UL << 18);
     GPIOI->OTYPER &= ~(1UL << 9);
     GPIOI->OSPEEDR |= (3UL << 18);
-
-    /* E2/E3 片选：PD9(MCU 75 脚) / PD10(MCU 76 脚)，推挽输出 */
-    GPIOD->MODER = (GPIOD->MODER & ~(3UL << 18)) | (1UL << 18);
-    GPIOD->OTYPER &= ~(1UL << 9);
-    GPIOD->OSPEEDR = (GPIOD->OSPEEDR & ~(3UL << 18)) | (2UL << 18);
-    GPIOD->PUPDR &= ~(3UL << 18);
-    GPIOD->BSRR = (1UL << 9);
-
-    GPIOD->MODER = (GPIOD->MODER & ~(3UL << 20)) | (1UL << 20);
-    GPIOD->OTYPER &= ~(1UL << 10);
-    GPIOD->OSPEEDR = (GPIOD->OSPEEDR & ~(3UL << 20)) | (2UL << 20);
-    GPIOD->PUPDR &= ~(3UL << 20);
-    GPIOD->BSRR = (1UL << 10);
     GPIOI->BSRR = (1UL << 9);
 
     /* 新增：FPC15 的片选 SPI4_CS1 = PH3 */
@@ -243,7 +229,7 @@ void adc64_init(void)
     GPIOH->BSRR = (1UL << 3);                              /* 初始高电平 */
     GPIOH->BSRR  = (1UL << 4);
 
-    /* PI8 片选补全配置（原代码只设了 MODER，导致驱动速度只有 2MHz，跟不上 SPI4 的 2.8MHz） */
+    /* PI8 片选补全：推挽 / 高速 / 无上下拉 */
     GPIOI->MODER   = (GPIOI->MODER   & ~(3UL << 16)) | (1UL << 16);
     GPIOI->OTYPER &= ~(1UL << 8);
     GPIOI->OSPEEDR = (GPIOI->OSPEEDR & ~(3UL << 16)) | (2UL << 16);
@@ -363,12 +349,12 @@ void adc64_scan(adc64_frame_t *f)
         uint8_t w;
         for (w = 0U; w < 4U; w++) {
             cs_low(0U);
-            board_delay_us(200U);
+            board_delay_us(60U);
             (void)board_spi_transfer16(0x0000U);
             cs_high(0U);
             board_delay_us(50);
             cs_low(1U);
-            board_delay_us(200U);
+            board_delay_us(s_acc_us);
             (void)board_spi_transfer16(0x0000U);
             cs_high(1U);
         }
@@ -390,22 +376,21 @@ void adc64_scan(adc64_frame_t *f)
             en_on(r);
             board_delay_us(ADC64_EN_SETTLE_US);
             /* 预扫一轮（丢弃），让模拟通路稳定 */
-            read_bank(1U, dummy);      /* 先预扫另一组，让目标边最后读 */
-            read_bank(0U, dummy);      /* 目标边预扫放在最后，紧邻正式读 */
+            read_bank(0U, dummy);
+            read_bank(1U, dummy);      /* bank 1 也预扫，消除两板的建立时间差异 */
         }
 
-        for (b = ADC64_BOARD_COUNT; b > 0U; b--) {   /* 倒序：bank0（目标边）最后读 */
+        for (b = 0U; b < ADC64_BOARD_COUNT; b++) {
             uint16_t buf[ADC64_COLS];
             uint8_t k;
-            uint8_t bb = (uint8_t)(b - 1U);
 
-            read_bank(bb, buf);
+            read_bank(b, buf);
             for (k = 0U; k < ADC64_COLS; k++) {
                 uint32_t bit = (uint32_t)r * ADC64_COLS + (uint32_t)k;
 
-                f->cell[bb][r][k] = buf[k];
-                if (((s_mask[bb] >> bit) & 1ULL) != 0ULL) {
-                    f->sum[bb] += (uint32_t)buf[k];
+                f->cell[b][r][k] = buf[k];
+                if (((s_mask[b] >> bit) & 1ULL) != 0ULL) {
+                    f->sum[b] += (uint32_t)buf[k];
                 }
             }
         }
@@ -786,8 +771,6 @@ static void cs_all_high(void)
     GPIOE->BSRR = (1UL << 13U);     /* FPC10 左边  PE13 */
     GPIOH->BSRR = (1UL << 4U);      /* FPC16 右边  PH4  */
     GPIOC->BSRR = (1UL << 13U);     /* FPC13 上边  PC13 */
-    GPIOD->BSRR = (1UL << 9U);      /* E2 片选 PD9  */
-    GPIOD->BSRR = (1UL << 10U);     /* E3 片选 PD10 */
     GPIOI->BSRR = (1UL << 9U);      /* FPC14 左边  PI9  */
 }
 
@@ -843,7 +826,6 @@ void adc64_read_edges_all(uint16_t *b0, uint16_t *b1, uint16_t *b2, uint16_t *b3
 
         k_cs[0].port = tport[pass];
         k_cs[0].pin  = tpin[pass];
-
         k_cs[0].port->BSRR = (1UL << k_cs[0].pin);
 
         adc64_scan(&fr);
