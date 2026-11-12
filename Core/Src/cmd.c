@@ -1663,31 +1663,13 @@ static void do_track(char *arg)
         uart_put_i32(best_ang);
         uart_puts("\r\n");
         return;
-    }    if (eqi(tok, "EDGES") != 0U) {
-        static uint16_t b0[64];
-        static uint16_t b1[64];
-        static uint16_t b2[64];
-        static uint16_t b3[64];
-        uint8_t ns[4];
-        uint8_t k;
-        uint16_t i;
-
-        adc64_read_edges_all(b0, b1, b2, b3, ns);
-
-        for (k = 0U; k < 4U; k++) {
-            const uint16_t *src = (k == 0U) ? b0 : (k == 1U) ? b1 : (k == 2U) ? b2 : b3;
-            uart_puts("E");
-            uart_put_u32((uint32_t)k);
-            uart_puts(":");
-            uart_put_u32((uint32_t)ns[k]);
-            for (i = 0U; i < (uint16_t)ns[k]; i++) {
-                uart_putc(' ');
-                uart_put_u32((uint32_t)src[i]);
-            }
-            uart_puts("\r\n");
-        }
+}
+    if (eqi(tok, "EDGES") != 0U) {
+        /* 采集 + 处理 + 定位全部在固件完成 */
+        st_dump_edges();
         return;
-    }    if (eqi(tok, "CSCAN") != 0U) {
+    }
+    if (eqi(tok, "CSCAN") != 0U) {
         /* 自动探测上/左两条边的 CS：把候选引脚逐个当片选，看哪根能读出数据 */
         static GPIO_TypeDef * const ports[] = { GPIOI, GPIOI, GPIOI, GPIOI,
                                                 GPIOH, GPIOH, GPIOH,

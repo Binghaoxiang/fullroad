@@ -140,6 +140,8 @@ class App:
         # ---- 跟随控制 ----
 
         self.tracking = False
+        self.fw_x = None
+        self.fw_y = None
         self.servo_deg = 90.0   # 中位（可向两侧各调 ±85 度）
 
         self.dir_sign = 1.0
@@ -411,6 +413,39 @@ class App:
 
                     buf += c.decode("ascii", "ignore")
 
+                    for _pl in buf.split("\r\n"):
+
+                        if _pl.startswith("POS "):
+
+                            _p2 = _pl[4:].split()
+
+                            if len(_p2) >= 2:
+
+                                try:
+
+                                    _fx = float(_p2[0]) / 10.0
+
+                                    _fy = float(_p2[1]) / 10.0
+
+                                    self.fw_x = _fx
+
+                                    self.fw_y = _fy
+
+                                    if self.pos is None:
+
+                                        self.pos = screen_pos.PosResult()
+
+                                    self.pos.x_mm = _fx
+
+                                    self.pos.y_mm = _fy
+
+                                    self.pos.valid = True
+
+                                except Exception:
+
+                                    pass
+
+
                     for line in buf.split("\r\n"):
 
                         for k in range(4):
@@ -437,29 +472,30 @@ class App:
 
                         break
 
+                # 数据已由固件处理完毕，UI 只做显示（不再调用 edge_dsp / screen_pos）
                 for k, v in got.items():
 
                     self.raw[k] = v
 
-                    n = len(v)
+                    self.proc[k] = {
 
-                    if self.base[k] is None or len(self.base[k].base) != n:
+                        "valid": max(v) > 0,
 
-                        self.base[k] = edge_dsp.Baseline(n, 0.02)
+                        "corr": [float(x) for x in v],
 
-                    self.proc[k] = edge_dsp.process_edge(
+                        "peak": max(v) if v else 0,
 
-                        v, self.base[k], thr_ratio=0.25,
+                        "peak_idx": (v.index(max(v)) if v else 0),
 
-                        noise_floor=60.0, use_median=True, use_savgol=True)
+                        "peak_width": 0, "centroid": 0.0, "sigma": None,
 
-                if self.tracking:
-                    self.track_step()
+                        "fit": None, "u": 0.0, "mu": 0.0, "sigma": 0.0, "centroid": 0.0,
+                        "peak_width": 0, "corr": [float(x) for x in v],
 
-                if got and all(self.proc[k] for k in range(4)):
+                    }
 
-                    self.pos = self.locator.localize(self.proc)
-                    self._smooth_pos()
+                # 位置由固件的 POS 行给出（上方已解析到 self.pos）
+
 
                 if got:
 
