@@ -76,100 +76,56 @@ static void savgol5(float *a, uint8_t n)
 
 static void edge_proc(uint8_t e)
 {
-    uint8_t  i;
-    uint8_t  n = s_n4[e];
-    uint16_t vmin = 0xFFFFU;
-    uint16_t vmax = 0U;
-    uint8_t  hi = 0U;
-    uint8_t  lo, end;
-    float    mx = 0.0f;
-    float    thr;
-    float    num = 0.0f;
-    float    den = 0.0f;
+    uint8_t i;
+    uint8_t n = s_n4[e];
+    uint8_t hi = 0U, lo, end;
+    float   mx = 0.0f, thr, num = 0.0f, den = 0.0f, gmin = 1.0e9f;
 
     s_ok[e] = 0U;
     s_u[e]  = 0.0f;
     s_pk[e] = 0.0f;
     if ((n < 5U) || (n > ST_MAX_PTS)) { return; }
 
+    /* ① 去全局最小值 */
+    for (i = 0U; i < n; i++) { if ((float)s_raw[e][i] < gmin) { gmin = (float)s_raw[e][i]; } }
     for (i = 0U; i < n; i++) {
-        if (s_raw[e][i] > vmax) { vmax = s_raw[e][i]; }
-        if (s_raw[e][i] < vmin) { vmin = s_raw[e][i]; }
-    }
-    s_pk[e] = (float)vmax;
-
-    if (s_base[e] < 1.0f) { s_base[e] = (float)vmin; }
-    s_base[e] += 0.02f * ((float)vmin - s_base[e]);
-
-    for (i = 0U; i < n; i++) {
-        float v = (float)s_raw[e][i] - s_base[e];
+        float v = (float)s_raw[e][i] - gmin;
         s_wrk[i] = (v > 0.0f) ? v : 0.0f;
     }
-    for (i = 0U; i < n; i++) { if (s_wrk[i] > mx) { mx = s_wrk[i]; } }
-    if (mx < 1.0f) { return; }
 
+    /* ② 中值 + Savitzky-Golay 5 点平滑 */
     median3(s_wrk, n);
     savgol5(s_wrk, n);
 
+    /* ③ 输出曲线 */
     for (i = 0U; i < n; i++) {
         s_prc[e][i] = (uint16_t)((s_wrk[i] > 4095.0f) ? 4095.0f : s_wrk[i]);
     }
 
-    /* ---- 峰值 ---- */
-    mx = 0.0f;
+    /* ④ 峰值 */
     for (i = 0U; i < n; i++) { if (s_wrk[i] > mx) { mx = s_wrk[i]; } }
+    s_pk[e] = mx;
+    if (mx < 20.0f) { return; }                  /* 确实没有光 */
 
-    /* ---- 噪声底：取后半段（通常是暗区）的平均值 + 2 倍标准差 ---- */
-    {
-        float mean = 0.0f, var = 0.0f, sd;
-        uint8_t m = 0U;
-        uint8_t st = (uint8_t)(n / 5U);          /* 跳过两端，取中间 60% 的低值部分 */
-        for (i = st; (uint8_t)(i + st) < n; i++) {
-            if (s_wrk[i] < (mx * 0.5f)) { mean += s_wrk[i]; m++; }
-        }
-        if (m < 2U) { return; }
-        mean /= (float)m;
-        for (i = st; (uint8_t)(i + st) < n; i++) {
-            if (s_wrk[i] < (mx * 0.5f)) {
-                float d = s_wrk[i] - mean;
-                var += d * d;
-            }
-        }
-        sd = var / (float)m;
-        if (sd > 0.0f) { sd = (float)sqrt((double)sd); }
-
-        /* 阈值 = max(25% 峰值, 均值 + 4σ) —— 兼顾强信号与弱信号 */
-        thr = mx * 0.25f;
-        if (thr < (mean + 4.0f * sd)) { thr = mean + 4.0f * sd; }
-    }
-    if (thr < 30.0f) { return; }                 /* 绝对下限：信号太弱 */
-
-    /* ---- 主峰区间 ---- */
+    /* ⑤ 峰位置 + 半高宽区间（退化时取峰两侧各 2 点） */
     for (i = 0U; i < n; i++) { if (s_wrk[i] >= mx) { hi = i; break; } }
-    lo = hi;
-    end = hi;
+    thr = mx * 0.5f;
+    lo = hi; end = hi;
     while ((lo > 0U) && (s_wrk[lo - 1U] > thr)) { lo--; }
     while (((uint8_t)(end + 1U) < n) && (s_wrk[end + 1U] > thr)) { end++; }
-
-    /* ---- 峰特征判据：区间不能太宽（宽包 = 散射光，无法定位）---- */
-    if ((uint16_t)(end - lo + 1U) > (uint16_t)((n * 6U) / 10U)) { return; }
-
-    /* ---- 峰形判据：峰值必须显著高于区间均值 ---- */
-    {
-        float s2 = 0.0f;
-        for (i = lo; i <= end; i++) { s2 += s_wrk[i]; }
-        s2 /= (float)(end - lo + 1U);
-        if (s2 < 1.0f) { return; }
-        if ((mx / s2) < 1.6f) { return; }        /* 峰顶/均值 < 1.6 → 平坦，判为无效 */
+    if (lo == end) {
+        lo = (hi >= 2U) ? (uint8_t)(hi - 2U) : 0U;
+        end = (uint8_t)((hi + 2U) < n ? (hi + 2U) : (n - 1U));
     }
 
+    /* ⑥ 加权重心 */
     for (i = lo; i <= end; i++) {
         num += s_wrk[i] * (float)i;
         den += s_wrk[i];
     }
-    if (den < 1.0f) { return; }
+    if (den < 1.0f) { den = 1.0f; num = (float)hi; }
 
-    s_u[e]  = (num / den) / (float)(n - 1U);
+    s_u[e] = (num / den) / (float)(n - 1U);
     if (s_u[e] < 0.0f) { s_u[e] = 0.0f; }
     if (s_u[e] > 1.0f) { s_u[e] = 1.0f; }
     s_ok[e] = 1U;

@@ -425,7 +425,7 @@ class App:
 
                                     _fx = float(_p2[0]) / 10.0
 
-                                    _fy = float(_p2[1]) / 10.0
+                                    _fy = SCREEN_H_MM - float(_p2[1]) / 10.0   # 屏幕坐标 Y 向下为正，固件 Y 向上为正，此处翻转
 
                                     self.fw_x = _fx
 
@@ -479,7 +479,7 @@ class App:
 
                     self.proc[k] = {
 
-                        "valid": max(v) > 0,
+                        "valid": len(v) > 0,
 
                         "corr": [float(x) for x in v],
 
