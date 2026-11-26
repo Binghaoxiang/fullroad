@@ -1,0 +1,24 @@
+build*/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+test_data/
+*.elf
+*.hex
+*.bin
+*.o
+*.d
+*.lst
+*.map
+*.log
+JLinkLog.txt
+JLinkSettings.ini
+.DS_Store
+Thumbs.db
+
+# Keep this independent project's build/flash/debug tasks despite parent rules.
+!.vscode/
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/flash.jlink

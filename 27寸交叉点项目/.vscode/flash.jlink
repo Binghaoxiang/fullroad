@@ -1,0 +1,6 @@
+r
+h
+loadfile build/screen_ctrl_ultra.elf
+r
+g
+exit

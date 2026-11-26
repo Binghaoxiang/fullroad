@@ -1,0 +1,56 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "固件：编译（使用 config.h）",
+            "type": "process",
+            "command": "C:\\Users\\a\\AppData\\Local\\Programs\\make\\bin\\make.exe",
+            "args": [
+                "-j4",
+                "BUILD_DIR=build",
+                "GCC_PATH=C:/Users/a/AppData/Local/Programs/gcc-arm-none-eabi/bin"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "固件：烧录（J-Link）",
+            "type": "process",
+            "command": "C:\\Program Files\\SEGGER\\JLink_V986\\JLink.exe",
+            "args": [
+                "-NoGui",
+                "1",
+                "-ExitOnError",
+                "1",
+                "-device",
+                "STM32G431CB",
+                "-if",
+                "SWD",
+                "-speed",
+                "2000",
+                "-autoconnect",
+                "1",
+                "-CommandFile",
+                "${workspaceFolder}\\.vscode\\flash.jlink"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "固件：编译（使用 config.h）",
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+        {
+            "label": "固件：一键编译并烧录",
+            "dependsOn": "固件：烧录（J-Link）",
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        }
+    ]
+}

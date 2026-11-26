@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "当前配置：J-Link 调试",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "jlink",
+            "serverpath": "C:\\Program Files\\SEGGER\\JLink_V986\\JLinkGDBServerCL.exe",
+            "device": "STM32G431CB",
+            "interface": "swd",
+            "serialNumber": "69659543",
+            "executable": "${workspaceFolder}/build/screen_ctrl_ultra.elf",
+            "armToolchainPath": "C:\\Users\\a\\AppData\\Local\\Programs\\gcc-arm-none-eabi\\bin",
+            "runToEntryPoint": "main",
+            "preLaunchTask": "固件：编译（使用 config.h）"
+        }
+    ]
+}
